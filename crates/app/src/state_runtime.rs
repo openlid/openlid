@@ -13,6 +13,7 @@ use open_lid_core::state::{should_prevent_sleep, AppState};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+#[allow(dead_code)]
 pub struct StateRuntime<P, L, S, D>
 where
     P: PowerController + 'static,
@@ -29,6 +30,7 @@ where
     config_path: PathBuf,
 }
 
+#[allow(dead_code)]
 impl<P, L, S, D> StateRuntime<P, L, S, D>
 where
     P: PowerController + Send + Sync + 'static,

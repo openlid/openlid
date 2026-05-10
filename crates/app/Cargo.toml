@@ -27,6 +27,7 @@ tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 chrono = { workspace = true }
 humantime = { workspace = true }
+toml = { workspace = true }
 interprocess = { workspace = true }
 directories = { workspace = true }
 libc = "0.2"
