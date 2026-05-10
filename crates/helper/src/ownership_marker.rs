@@ -1,9 +1,12 @@
 //! Crash-recovery marker file. While sleep prevention is active, this file
 //! exists. On helper startup, if the file exists and no client connects
 //! within a grace period, we restore normal sleep behavior.
+#![allow(dead_code)] // wired in Task 14
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(test)]
+use std::path::Path;
 
 const MARKER_PATH: &str = "/Library/Application Support/open-lid/sleep-prevention.enabled";
 

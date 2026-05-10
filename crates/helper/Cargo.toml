@@ -17,6 +17,8 @@ objc2-foundation = { workspace = true }
 block2 = { workspace = true }
 core-foundation = { workspace = true }
 security-framework = { workspace = true }
+security-framework-sys = "2"
+core-foundation-sys = "0.8"
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
