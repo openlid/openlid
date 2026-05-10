@@ -105,6 +105,44 @@ pub enum PowerSource {
     Battery { percent: u8 },
 }
 
+impl Schedule {
+    /// Returns true if `now` falls within this schedule window.
+    pub fn contains(&self, now: chrono::DateTime<chrono::Local>) -> bool {
+        use chrono::{Datelike, Timelike, Weekday};
+
+        let today_flag = match now.weekday() {
+            Weekday::Mon => DaysOfWeek::MON,
+            Weekday::Tue => DaysOfWeek::TUE,
+            Weekday::Wed => DaysOfWeek::WED,
+            Weekday::Thu => DaysOfWeek::THU,
+            Weekday::Fri => DaysOfWeek::FRI,
+            Weekday::Sat => DaysOfWeek::SAT,
+            Weekday::Sun => DaysOfWeek::SUN,
+        };
+
+        let now_t = chrono::NaiveTime::from_hms_opt(now.hour(), now.minute(), now.second())
+            .expect("valid clock time");
+
+        if self.start <= self.end {
+            self.days.contains(today_flag) && now_t >= self.start && now_t < self.end
+        } else {
+            if self.days.contains(today_flag) && now_t >= self.start {
+                return true;
+            }
+            let yesterday = match now.weekday() {
+                Weekday::Mon => DaysOfWeek::SUN,
+                Weekday::Tue => DaysOfWeek::MON,
+                Weekday::Wed => DaysOfWeek::TUE,
+                Weekday::Thu => DaysOfWeek::WED,
+                Weekday::Fri => DaysOfWeek::THU,
+                Weekday::Sat => DaysOfWeek::FRI,
+                Weekday::Sun => DaysOfWeek::SAT,
+            };
+            self.days.contains(yesterday) && now_t < self.end
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +187,71 @@ mod tests {
     fn days_of_week_rejects_unknown_day() {
         let r: Result<DaysOfWeek, _> = serde_json::from_str(r#"["Funday"]"#);
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn schedule_same_day_inside_window_active() {
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        let now = Local.with_ymd_and_hms(2026, 5, 11, 12, 0, 0).unwrap();
+        assert!(sched.contains(now));
+    }
+
+    #[test]
+    fn schedule_same_day_outside_window_inactive() {
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        let now = Local.with_ymd_and_hms(2026, 5, 11, 20, 0, 0).unwrap();
+        assert!(!sched.contains(now));
+    }
+
+    #[test]
+    fn schedule_day_not_in_flags_inactive() {
+        let sched = Schedule {
+            days: DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI,
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        let now = Local.with_ymd_and_hms(2026, 5, 9, 12, 0, 0).unwrap();
+        assert!(!sched.contains(now));
+    }
+
+    #[test]
+    fn schedule_crosses_midnight_late_evening_active() {
+        let sched = Schedule {
+            days: DaysOfWeek::MON,
+            start: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(2, 0, 0).unwrap(),
+        };
+        let now = Local.with_ymd_and_hms(2026, 5, 11, 23, 30, 0).unwrap();
+        assert!(sched.contains(now));
+    }
+
+    #[test]
+    fn schedule_crosses_midnight_early_morning_uses_yesterday_flag() {
+        let sched = Schedule {
+            days: DaysOfWeek::MON,
+            start: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(2, 0, 0).unwrap(),
+        };
+        let now = Local.with_ymd_and_hms(2026, 5, 12, 1, 0, 0).unwrap();
+        assert!(sched.contains(now));
+    }
+
+    #[test]
+    fn schedule_at_exact_end_inactive() {
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        let now = Local.with_ymd_and_hms(2026, 5, 11, 18, 0, 0).unwrap();
+        assert!(!sched.contains(now));
     }
 }
