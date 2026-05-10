@@ -189,9 +189,9 @@ repository = "https://github.com/diyanbogdanov/open-lid"
 # Internal
 open-lid-core = { path = "crates/core" }
 
-# Apple bindings
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSXPCListener", "NSXPCInterface", "NSObject", "NSRunLoop"] }
+# Apple bindings (versions + features verified by Phase 0 spike)
+objc2 = { version = "0.6", features = ["exception"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSObject", "NSRunLoop", "block2"] }
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSWindow", "NSAlert"] }
 block2 = "0.6"
 core-foundation = "0.10"
