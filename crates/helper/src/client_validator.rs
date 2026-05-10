@@ -1,6 +1,5 @@
 //! Validates that an incoming XPC client is signed with the expected
 //! bundle identifier and Team ID. Uses Security framework SecCode APIs.
-#![allow(dead_code)] // wired in Task 14
 
 use anyhow::{anyhow, Result};
 use core_foundation::base::TCFType;

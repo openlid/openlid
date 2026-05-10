@@ -1,7 +1,6 @@
 //! Crash-recovery marker file. While sleep prevention is active, this file
 //! exists. On helper startup, if the file exists and no client connects
 //! within a grace period, we restore normal sleep behavior.
-#![allow(dead_code)] // wired in Task 14
 
 use anyhow::Result;
 use std::path::PathBuf;

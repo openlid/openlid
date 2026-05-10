@@ -1,7 +1,6 @@
 //! 15-second idle timer. The helper calls `arm()` on every client
 //! disconnect; `disarm()` on every client connect. If `arm()` is followed
 //! by 15 s of no `disarm()`, the timer fires and we exit.
-#![allow(dead_code)] // wired in Task 14
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
