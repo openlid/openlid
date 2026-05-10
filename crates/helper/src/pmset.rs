@@ -1,5 +1,4 @@
 //! Wraps `/usr/bin/pmset` invocations. Pulled out so we can stub in tests.
-#![allow(dead_code)] // wired in Task 14
 
 use anyhow::{anyhow, Result};
 use std::process::Command;
@@ -46,7 +45,7 @@ impl Pmset for RealPmset {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::Mutex;
 

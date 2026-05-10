@@ -9,16 +9,50 @@ mod client_validator;
 mod idle_exit;
 mod ownership_marker;
 mod pmset;
+mod xpc_listener;
 
 use anyhow::Result;
 use std::os::unix::io::AsRawFd;
+use std::sync::Arc;
+
+use pmset::Pmset;
+
+const HELPER_MACH_SERVICE_NAME: &str = "io.openlid.helper";
+const DEV_REQUIREMENT: &str = r#"identifier "io.openlid.app""#;
 
 fn main() -> Result<()> {
     setup_logging()?;
     guard_launched_by_launchd()?;
     tracing::info!("open-lid-helper starting (pid {})", std::process::id());
 
-    // TODO Task 14: install XPC listener, run main loop.
+    let pmset = Arc::new(pmset::RealPmset);
+    let marker = Arc::new(ownership_marker::OwnershipMarker::new());
+    let validator = Arc::new(client_validator::ClientValidator::new(DEV_REQUIREMENT));
+    let idle_exit = idle_exit::IdleExit::new();
+
+    // Stale-state recovery: if the marker is present at startup, the previous
+    // helper (or app) probably crashed without cleaning up. Restore normal
+    // sleep behavior and remove the marker before accepting connections.
+    if marker.exists() {
+        tracing::warn!("ownership marker present at startup; restoring sleep");
+        let _ = pmset.set_disable_sleep(false);
+        let _ = marker.remove();
+    }
+
+    let helper = xpc_listener::HelperImpl {
+        pmset,
+        marker,
+        idle_exit: idle_exit.clone(),
+        validator,
+    };
+
+    // Initial arm: if no client connects within 15 s, exit.
+    idle_exit.arm(|| {
+        tracing::info!("idle-exit timer fired; exiting");
+        std::process::exit(0);
+    });
+
+    xpc_listener::run_listener(helper, HELPER_MACH_SERVICE_NAME)?;
     Ok(())
 }
 
