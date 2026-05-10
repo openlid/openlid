@@ -1,7 +1,5 @@
 //! Wraps IOPowerSources to read current power source and subscribe to changes.
 
-#![allow(dead_code)]
-
 use super::iokit_ffi::*;
 use core_foundation::array::CFArray;
 use core_foundation::base::TCFType;

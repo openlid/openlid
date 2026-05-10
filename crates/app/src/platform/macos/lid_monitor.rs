@@ -1,8 +1,6 @@
 //! Monitors lid open/closed state via IOKit IOPMrootDomain.
 //! Port of Sources/Modafinil/LidMonitor.swift.
 
-#![allow(dead_code)]
-
 use super::iokit_ffi::*;
 use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
