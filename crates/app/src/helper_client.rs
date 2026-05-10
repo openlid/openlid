@@ -29,11 +29,6 @@
 //! This is the same pattern as the spike's `call_ping`, replicated three times
 //! for the three protocol methods.
 
-// Task 21 will wire this module's `pub` API into the menubar runtime. Until
-// then, parts of the surface are technically unused — silence the lints
-// rather than scattering `#[allow]` on every item.
-#![allow(dead_code)]
-
 use block2::{ManualBlockEncoding, RcBlock};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Bool};
@@ -70,7 +65,9 @@ unsafe impl ManualBlockEncoding for ReplyOkErr {
 }
 
 /// `void (^)(BOOL ok, BOOL active, NSString * _Nullable error)` — reply for
-/// `getSleepPreventionStatusWithReply:`.
+/// `getSleepPreventionStatusWithReply:`. Used by `HelperClient::get_status`,
+/// which the menubar does not yet call (Plan 2 will).
+#[allow(dead_code)]
 struct ReplyOkActiveErr;
 // SAFETY: argument tuple matches `(BOOL, BOOL, NSString*)` and return is void.
 unsafe impl ManualBlockEncoding for ReplyOkActiveErr {
@@ -79,7 +76,9 @@ unsafe impl ManualBlockEncoding for ReplyOkActiveErr {
     const ENCODING_CSTR: &'static CStr = c"v24@?0B8B12@\"NSString\"16";
 }
 
-/// `void (^)(void)` — reply for `pingWithReply:`.
+/// `void (^)(void)` — reply for `pingWithReply:`. Used by `HelperClient::ping`,
+/// reserved for Plan 2's health check (the MVP doesn't ping explicitly).
+#[allow(dead_code)]
 struct ReplyEmpty;
 // SAFETY: argument tuple is unit (no arguments) and return is void.
 unsafe impl ManualBlockEncoding for ReplyEmpty {
@@ -238,6 +237,7 @@ impl HelperClient {
     }
 
     /// Query the current sleep-prevention state from the helper.
+    #[allow(dead_code)] // Reserved for Plan 2 health check.
     pub fn get_status(&self) -> Result<bool, PlatformError> {
         let (tx, rx) = mpsc::sync_channel::<Result<bool, PlatformError>>(1);
         let slot: Slot<Result<bool, PlatformError>> = Arc::new(Mutex::new(Some(tx)));
@@ -282,7 +282,9 @@ impl HelperClient {
         recv_or_timeout(&rx)
     }
 
-    /// Round-trip ping. Used by the menubar to confirm the helper is reachable.
+    /// Round-trip ping. Reserved for Plan 2 (the MVP menubar relies on the
+    /// connection coming up implicitly on the first `set_sleep_prevention`).
+    #[allow(dead_code)]
     pub fn ping(&self) -> Result<(), PlatformError> {
         let (tx, rx) = mpsc::sync_channel::<Result<(), PlatformError>>(1);
         let slot: Slot<Result<(), PlatformError>> = Arc::new(Mutex::new(Some(tx)));
