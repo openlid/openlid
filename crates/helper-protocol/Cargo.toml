@@ -5,3 +5,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+
+[build-dependencies]
+cc = "1.2"
