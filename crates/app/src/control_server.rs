@@ -15,7 +15,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[allow(dead_code)]
 pub fn control_socket_path() -> Result<PathBuf> {
     let dirs = directories::ProjectDirs::from("io", "openlid", "open-lid")
         .ok_or_else(|| anyhow::anyhow!("no home"))?;
@@ -24,7 +23,6 @@ pub fn control_socket_path() -> Result<PathBuf> {
     Ok(dir.join("control.sock"))
 }
 
-#[allow(dead_code)]
 pub fn spawn<P, L, S, D>(rt: Arc<StateRuntime<P, L, S, D>>) -> Result<()>
 where
     P: PowerController + Send + Sync + 'static,
@@ -57,7 +55,6 @@ where
     Ok(())
 }
 
-#[allow(dead_code)]
 fn handle_one<P, L, S, D>(stream: Stream, rt: Arc<StateRuntime<P, L, S, D>>) -> Result<()>
 where
     P: PowerController + Send + Sync + 'static,
@@ -76,7 +73,6 @@ where
     Ok(())
 }
 
-#[allow(dead_code)]
 fn dispatch<P, L, S, D>(
     req: ControlRequest,
     rt: &Arc<StateRuntime<P, L, S, D>>,

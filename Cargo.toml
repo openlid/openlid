@@ -16,7 +16,7 @@ open-lid-core = { path = "crates/core" }
 # Apple bindings (versions verified by Phase 0 spike)
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSObject", "NSRunLoop", "block2"] }
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSWindow", "NSAlert"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSAlert", "NSCell"] }
 block2 = "0.6"
 core-foundation = "0.10"
 security-framework = "3"
