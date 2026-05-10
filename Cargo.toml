@@ -1,0 +1,46 @@
+[workspace]
+members = ["crates/core", "crates/helper-protocol", "crates/app", "crates/helper", "xtask"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "MIT"
+repository = "https://github.com/diyanbogdanov/open-lid"
+
+[workspace.dependencies]
+# Internal
+open-lid-core = { path = "crates/core" }
+
+# Apple bindings (versions verified by Phase 0 spike)
+objc2 = { version = "0.6", features = ["exception"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSObject", "NSRunLoop", "block2"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSWindow", "NSAlert"] }
+block2 = "0.6"
+core-foundation = "0.10"
+security-framework = "3"
+
+# CLI / data
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+humantime = "2"
+bitflags = { version = "2", features = ["serde"] }
+
+# Infra
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+directories = "5"
+interprocess = { version = "2", features = ["tokio"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
