@@ -1,0 +1,23 @@
+/target
+/dist
+**/*.rs.bk
+.DS_Store
+
+# Build artifacts
+*.app/
+*.dmg
+*.zip
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Signing / notarization credentials — never commit
+.env
+.env.local
+*.p12
+*.cer
+*.mobileprovision
+notarization-credentials*
+AuthKey_*.p8
