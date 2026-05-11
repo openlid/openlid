@@ -53,7 +53,12 @@ fn try_send(path: &std::path::Path, req: &ControlRequest) -> Result<ControlRespo
 pub fn set_enabled(enabled: bool) -> Result<()> {
     match send_request(ControlRequest::SetEnabled { enabled }, true)? {
         ControlResponse::Ok { state } => {
-            println!("{}", if state.preventing_sleep_now { "ON" } else { "OFF" });
+            // Report the user's intent (the toggle state), not the
+            // moment-to-moment "actually preventing right now" state. In
+            // mode `lid-closed` with the lid open, the toggle is on but
+            // we're not actively calling pmset yet — that's still "ON"
+            // from the user's perspective.
+            println!("{}", if state.enabled { "ON" } else { "OFF" });
             Ok(())
         }
         ControlResponse::Error { message } => Err(anyhow!(message)),
@@ -87,10 +92,13 @@ pub fn status(json: bool) -> Result<()> {
 }
 
 fn print_status_human(s: &Snapshot) {
-    let active = if s.preventing_sleep_now { "ACTIVE" } else { "idle" };
-    println!("Sleep prevention: {active}");
+    let state_label = match (s.enabled, s.preventing_sleep_now) {
+        (false, _) => "OFF",
+        (true, true) => "ON (preventing sleep now)",
+        (true, false) => "ON (armed, idle)",
+    };
+    println!("Sleep prevention: {state_label}");
     println!("Mode:             {:?}", s.mode);
-    println!("Enabled:          {}", s.enabled);
     println!("Lid:              {:?}", s.lid);
     println!("Power:            {:?}", s.power);
 }
