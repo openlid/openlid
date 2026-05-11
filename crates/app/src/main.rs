@@ -1,9 +1,10 @@
 mod cli;
-mod helper_client;     // stub — Task 20 fills this in
+mod control_server;
+mod helper_client;
+mod main_thread;
 mod menubar;
 mod platform;
-mod state_runtime;     // stub — Task 21 fills this in
-mod control_server;    // stub — Task 23 fills this in
+mod state_runtime;
 
 use anyhow::Result;
 use std::process::ExitCode;
