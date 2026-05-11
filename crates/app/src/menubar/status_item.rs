@@ -40,20 +40,25 @@ impl UIShared {
     /// Recompute the status item's button image and the menu's mutable items
     /// from the snapshot. Caller MUST be on the main thread.
     pub fn refresh(&self, snap: &Snapshot, mtm: MainThreadMarker) {
-        // Button image — SF Symbol. `eye.fill` means "Open-Lid is preventing
-        // sleep now"; `eye.slash` means we are armed-but-idle or fully off.
-        // Use `setTemplate(true)` so the menu bar renders correctly in both
-        // light and dark menu-bar appearances.
-        let symbol_name = if snap.preventing_sleep_now {
+        // Button image — SF Symbol. The icon reflects the user's *intent*
+        // (the `enabled` toggle), not the moment-to-moment "actually
+        // preventing sleep right now" state. In mode `lid-closed`, when the
+        // user has clicked "Turn On" but the lid is open, sleep is not being
+        // prevented yet — but the toggle is armed, and the icon should show
+        // that. This matches the original upstream's behavior.
+        //
+        // The menu's status row separately shows whether prevention is
+        // active right now (e.g. "Armed (idle)" vs "Armed (preventing)").
+        let symbol_name = if snap.enabled {
             "eye.fill"
         } else {
             "eye.slash"
         };
         let symbol_ns = NSString::from_str(symbol_name);
-        let accessibility = NSString::from_str(if snap.preventing_sleep_now {
-            "Open-Lid: preventing sleep"
+        let accessibility = NSString::from_str(if snap.enabled {
+            "Open-Lid: armed"
         } else {
-            "Open-Lid: idle"
+            "Open-Lid: off"
         });
         // SF Symbols are available on macOS 11+; the call returns `None` on
         // older systems or if the symbol name is wrong. We fall back to a
@@ -72,7 +77,7 @@ impl UIShared {
             } else {
                 // Fallback: short text. Better than a blank slot.
                 button.setImage(None);
-                let txt = if snap.preventing_sleep_now { "ON" } else { "off" };
+                let txt = if snap.enabled { "ON" } else { "off" };
                 button.setTitle(&NSString::from_str(txt));
             }
         }
