@@ -65,6 +65,21 @@ pub fn run() -> Result<()> {
     // First paint reflects the persisted state.
     ui.refresh(&runtime.snapshot(), mtm);
 
+    // Subscribe to runtime changes so the UI refreshes when the CLI (via
+    // the control socket) or a lid/power event modifies state from a
+    // non-main thread. Each listener invocation hops to the main thread
+    // before touching AppKit.
+    let ui_for_listener = ui.shared();
+    runtime.add_listener(Arc::new(move |snap| {
+        let ui = Arc::clone(&ui_for_listener);
+        let snap = snap.clone();
+        crate::main_thread::run_on_main(move || {
+            if let Some(mtm) = MainThreadMarker::new() {
+                ui.refresh(&snap, mtm);
+            }
+        });
+    }));
+
     // Run the event loop. This returns when -[NSApplication terminate:]
     // is invoked (from the Quit menu item).
     app.run();

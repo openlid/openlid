@@ -5,6 +5,7 @@
 use anyhow::Result;
 use chrono::Local;
 use open_lid_core::config::Config;
+use open_lid_core::ipc::control::Snapshot;
 use open_lid_core::mode::{LidState, Mode, Modifiers, PowerSource};
 use open_lid_core::platform::{
     DisplayController, LidObserver, PowerController, PowerSourceMonitor,
@@ -12,6 +13,13 @@ use open_lid_core::platform::{
 use open_lid_core::state::{should_prevent_sleep, AppState};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+/// Notification fired whenever any state-affecting field changes. Listeners
+/// run on whichever thread triggered the change (menu click = main thread,
+/// CLI = control-server worker thread, lid/power events = main thread via
+/// IOKit run-loop sources). UI listeners MUST hop to main themselves before
+/// touching AppKit.
+pub type StateListener = Arc<dyn Fn(&Snapshot) + Send + Sync>;
 
 pub struct StateRuntime<P, L, S, D>
 where
@@ -27,6 +35,7 @@ where
     _lid: Arc<L>,
     _power_source: Arc<S>,
     config_path: PathBuf,
+    listeners: Mutex<Vec<StateListener>>,
 }
 
 impl<P, L, S, D> StateRuntime<P, L, S, D>
@@ -61,6 +70,7 @@ where
             _lid: lid.clone(),
             _power_source: power_source.clone(),
             config_path,
+            listeners: Mutex::new(Vec::new()),
         });
 
         let rt_for_lid = Arc::clone(&rt);
@@ -74,6 +84,24 @@ where
 
         rt.reconcile();
         Ok(rt)
+    }
+
+    /// Subscribe to state changes. Listener is called after every successful
+    /// `set_enabled`/`set_mode`/`set_modifiers` and after every lid/power event
+    /// reconciliation. UI listeners must dispatch back to the main thread
+    /// before touching AppKit — see `crate::main_thread::run_on_main`.
+    pub fn add_listener(&self, listener: StateListener) {
+        self.listeners.lock().unwrap().push(listener);
+    }
+
+    fn notify_listeners(&self) {
+        let snap = self.snapshot();
+        // Clone the Arc list and drop the lock before invoking any listener,
+        // so a re-entrant `add_listener` during a callback can't deadlock.
+        let listeners: Vec<StateListener> = self.listeners.lock().unwrap().clone();
+        for l in &listeners {
+            l(&snap);
+        }
     }
 
     pub fn set_enabled(self: &Arc<Self>, enabled: bool) -> Result<()> {
@@ -115,11 +143,13 @@ where
         if was_closing && !self.display.has_external_display() {
             let _ = self.display.force_display_sleep();
         }
+        self.notify_listeners();
     }
 
     fn on_power_change(self: &Arc<Self>, new_ps: PowerSource) {
         self.state.lock().unwrap().power = new_ps;
         self.reconcile();
+        self.notify_listeners();
     }
 
     fn persist_and_reconcile(&self) -> Result<()> {
@@ -133,6 +163,7 @@ where
         };
         cfg.save(&self.config_path)?;
         self.reconcile();
+        self.notify_listeners();
         Ok(())
     }
 
