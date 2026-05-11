@@ -4,6 +4,7 @@
 //! traits (lid, power source, display, helper-backed power controller), wires
 //! up the state runtime and the control-socket server, then constructs the
 //! `NSStatusItem` UI and pumps the AppKit event loop.
+mod icons;
 mod menu;
 mod status_item;
 
