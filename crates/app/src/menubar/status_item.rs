@@ -8,9 +8,10 @@
 //! because every concrete touch happens from a main-thread callback (the
 //! menu click handlers in `MenuHandler`, and `mod::run` itself). If a future
 //! caller wires refresh from a background thread, it MUST hop to main first.
+use super::icons::laptop_icon;
 use super::menu::{build_menu, refresh_menu, BuiltMenu, MenuActions, MenuHandler};
 use objc2::rc::Retained;
-use objc2_app_kit::{NSImage, NSStatusBar, NSStatusItem, NSVariableStatusItemLength};
+use objc2_app_kit::{NSStatusBar, NSStatusItem, NSVariableStatusItemLength};
 use objc2_foundation::{MainThreadMarker, NSString};
 use open_lid_core::ipc::control::Snapshot;
 use std::sync::Arc;
@@ -40,46 +41,28 @@ impl UIShared {
     /// Recompute the status item's button image and the menu's mutable items
     /// from the snapshot. Caller MUST be on the main thread.
     pub fn refresh(&self, snap: &Snapshot, mtm: MainThreadMarker) {
-        // Button image — SF Symbol. The icon reflects the user's *intent*
-        // (the `enabled` toggle), not the moment-to-moment "actually
-        // preventing sleep right now" state. In mode `lid-closed`, when the
-        // user has clicked "Turn On" but the lid is open, sleep is not being
-        // prevented yet — but the toggle is armed, and the icon should show
-        // that. This matches the original Modafinil's behavior.
+        // The icon reflects the user's *intent* (the `enabled` toggle), not
+        // the moment-to-moment "actually preventing sleep right now" state.
+        // In mode `lid-closed` with the lid open, sleep isn't being prevented
+        // yet — but the toggle is armed and the icon should show that. The
+        // menu's status row separately shows the precise prevention state.
         //
-        // The menu's status row separately shows whether prevention is
-        // active right now (e.g. "Armed (idle)" vs "Armed (preventing)").
-        let symbol_name = if snap.enabled {
-            "eye.fill"
-        } else {
-            "eye.slash"
-        };
-        let symbol_ns = NSString::from_str(symbol_name);
+        // Icons are programmatically drawn from Tabler's MIT-licensed SVGs:
+        //   - `device-laptop`     for ON
+        //   - `device-laptop-off` for OFF
+        let image = laptop_icon(snap.enabled);
+        image.setTemplate(true);
         let accessibility = NSString::from_str(if snap.enabled {
             "Open-Lid: armed"
         } else {
             "Open-Lid: off"
         });
-        // SF Symbols are available on macOS 11+; the call returns `None` on
-        // older systems or if the symbol name is wrong. We fall back to a
-        // text title in that case to avoid a blank menu bar entry.
-        let image = NSImage::imageWithSystemSymbolName_accessibilityDescription(
-            &symbol_ns,
-            Some(&accessibility),
-        );
+        image.setAccessibilityDescription(Some(&accessibility));
 
         if let Some(button) = self.status_item.button(mtm) {
-            if let Some(img) = image {
-                img.setTemplate(true);
-                button.setImage(Some(&img));
-                // Clear any fallback title so we show only the icon.
-                button.setTitle(&NSString::from_str(""));
-            } else {
-                // Fallback: short text. Better than a blank slot.
-                button.setImage(None);
-                let txt = if snap.enabled { "ON" } else { "off" };
-                button.setTitle(&NSString::from_str(txt));
-            }
+            button.setImage(Some(&image));
+            // Clear any fallback title so we show only the icon.
+            button.setTitle(&NSString::from_str(""));
         }
 
         refresh_menu(&self.menu, snap);
