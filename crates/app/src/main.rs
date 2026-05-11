@@ -22,9 +22,62 @@ fn run() -> Result<()> {
 
     let subcommand = args.get(1).map(String::as_str);
     match subcommand {
-        None | Some("menubar") => menubar::run(),
+        // Explicit `menubar` always runs foreground — the .app bundle uses this.
+        Some("menubar") => menubar::run(),
         Some(_) => cli::run(args),
+        None => dispatch_no_args(),
     }
+}
+
+/// `open-lid` invoked with no arguments. Choose between:
+///   * Foreground menubar — when launched from inside an .app bundle
+///     (LSUIElement) or any non-TTY context (launchd, supervisors).
+///   * Detach to background — when invoked from an interactive shell. We
+///     re-spawn ourselves with `menubar` in a new session so the calling
+///     terminal stays free.
+fn dispatch_no_args() -> Result<()> {
+    if is_running_from_app_bundle() || !is_stdin_a_tty() {
+        return menubar::run();
+    }
+    spawn_self_in_background()
+}
+
+fn is_running_from_app_bundle() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.contains(".app/Contents/MacOS/")))
+        .unwrap_or(false)
+}
+
+fn is_stdin_a_tty() -> bool {
+    use std::os::unix::io::AsRawFd;
+    unsafe { libc::isatty(std::io::stdin().as_raw_fd()) == 1 }
+}
+
+fn spawn_self_in_background() -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("menubar")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    // setsid() detaches the child from the controlling terminal so it
+    // survives shell exit and doesn't get SIGHUP when the terminal closes.
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let child = cmd.spawn()?;
+    println!("open-lid started in background (pid {}).", child.id());
+    println!("  open-lid status   - show state");
+    println!("  open-lid off      - disable");
+    println!("  pkill open-lid    - stop the menubar app");
+    Ok(())
 }
 
 fn setup_logging() -> Result<()> {
