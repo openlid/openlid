@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 # scripts/build-app-bundle.sh
 # Build OpenLid.app for local dev. Ad-hoc signing only.
+#
+# Output goes to `target/bundle/OpenLid.app`. The `target/` directory is
+# `cargo`-managed and Spotlight typically skips it; this avoids the
+# previous footgun where a project-root `OpenLid.app` showed up as a
+# *second* installable app in Spotlight alongside the real one in
+# /Applications.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 cargo build -p open-lid -p open-lid-helper
 
-APP="OpenLid.app"
+BUNDLE_DIR="target/bundle"
+APP="${BUNDLE_DIR}/OpenLid.app"
+mkdir -p "$BUNDLE_DIR"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 mkdir -p "$APP/Contents/Library/LaunchDaemons"
+
+# Belt-and-suspenders: tell Spotlight to never index target/ even if a user
+# tweaks their indexer settings. Touching this marker file is harmless if
+# the directory is already excluded.
+touch target/.metadata_never_index 2>/dev/null || true
 
 cp target/debug/open-lid "$APP/Contents/MacOS/open-lid"
 cp target/debug/open-lid-helper "$APP/Contents/MacOS/open-lid-helper"
@@ -29,5 +42,7 @@ codesign --force --sign - --options runtime "$APP/Contents/MacOS/open-lid-helper
 codesign --force --sign - --options runtime "$APP/Contents/MacOS/open-lid"
 codesign --force --sign - --deep --options runtime "$APP"
 
-echo "Built $APP. Move to /Applications:"
-echo "  cp -R $APP /Applications/"
+echo "Built $APP."
+echo
+echo "Install (or reinstall) into /Applications:"
+echo "  ./scripts/dev-install-app.sh"
