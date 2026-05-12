@@ -31,6 +31,16 @@ use std::sync::{Arc, OnceLock};
 pub fn run() -> Result<()> {
     tracing::info!("menubar: starting");
 
+    // Single-instance guard. If another `open-lid menubar` is already running,
+    // it owns the control socket; we silently exit so launching the .app a
+    // second time is a no-op (matching keep-awake-style's behavior). Without this,
+    // every `open -a OpenLid` would spawn a fresh process, leading to
+    // multiple menu bar icons and a clobbered control socket.
+    if another_instance_running() {
+        tracing::info!("menubar: another instance is already running; exiting");
+        return Ok(());
+    }
+
     let mtm = MainThreadMarker::new()
         .ok_or_else(|| anyhow::anyhow!("menubar::run must be called on the main thread"))?;
 
@@ -99,6 +109,40 @@ pub fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Probe whether a running menubar instance owns the control socket. We
+/// attempt to connect; success means another process is listening — i.e.,
+/// another `open-lid menubar` is already alive. A non-existent socket file
+/// or `ECONNREFUSED` (stale socket from a crashed instance) both return
+/// `false`, in which case the caller can safely take over.
+///
+/// Uses `std::os::unix::net::UnixStream` directly rather than the
+/// `interprocess` crate the control server uses. The interprocess wrapper
+/// returned spurious failures when the socket path contained spaces
+/// (e.g. "Application Support"); a raw UNIX-domain connect matches what
+/// `nc -U "$SOCK"` does and behaves predictably.
+fn another_instance_running() -> bool {
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    let Ok(path) = control_server::control_socket_path() else {
+        return false;
+    };
+    if !path.exists() {
+        return false;
+    }
+    match UnixStream::connect(&path) {
+        Ok(stream) => {
+            // Set a short timeout so a hung peer can't pin us at startup.
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+            true
+        }
+        Err(e) => {
+            tracing::debug!("another_instance_running: connect failed: {e}");
+            false
+        }
+    }
 }
 
 /// Concrete `MenuActions` impl wrapping the (generic) `StateRuntime` plus a

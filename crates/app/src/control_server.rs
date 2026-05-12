@@ -64,7 +64,12 @@ where
 {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
-    reader.read_line(&mut line)?;
+    let n = reader.read_line(&mut line)?;
+    if n == 0 || line.trim().is_empty() {
+        // Empty connection — the single-instance probe drops the stream after
+        // confirming the server is alive. Not an error.
+        return Ok(());
+    }
     let req: ControlRequest = serde_json::from_str(line.trim())?;
     let resp = dispatch(req, &rt);
     let mut s = reader.into_inner();
