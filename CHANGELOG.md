@@ -11,6 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial public release infrastructure: CI, coverage, release automation.
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`.
+- `version` field in `config.toml` (defaults to `1`; the schema's
+  forward-compatibility hook for future v2.x). Pre-v1.0 configs load
+  cleanly with no user action. Loading a config from a newer schema
+  emits a warning and continues to load known fields rather than
+  failing.
+- `docs/COMPATIBILITY.md` declaring the v1.x semver promise: stable
+  surfaces are the CLI subcommands/flags/exit codes, `status --json`
+  output shape, `config.toml` field names, control-socket JSON wire
+  shapes, and helper XPC method signatures.
+
+### Changed
+
+- Roadmap: removed v0.3 (schedule UI, state-change notifications, and
+  configurable hotkey are not planned). v1.0 is the next milestone
+  after v0.2.
 
 ## [0.1.0] - 2026-05-12
 
