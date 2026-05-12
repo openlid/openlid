@@ -10,6 +10,8 @@
     <string>Open-Lid</string>
     <key>CFBundleExecutable</key>
     <string>open-lid</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>
