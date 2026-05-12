@@ -16,10 +16,10 @@ use crate::platform::macos::{
 };
 use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
+use chrono::{Duration, Local};
 use menu::MenuActions;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
-use chrono::{Duration, Local};
 use open_lid_core::config::Config;
 use open_lid_core::platform::{
     DisplayController, LidObserver, PowerController, PowerSourceMonitor,
@@ -185,7 +185,10 @@ where
 
     /// Install a self-Arc for handing to `PreferencesWindow`. Must be called
     /// exactly once at startup.
-    fn install_self_prefs(&self, self_arc: Arc<dyn PrefsActions>) -> Result<(), Arc<dyn PrefsActions>> {
+    fn install_self_prefs(
+        &self,
+        self_arc: Arc<dyn PrefsActions>,
+    ) -> Result<(), Arc<dyn PrefsActions>> {
         self.self_prefs.set(self_arc)
     }
 
@@ -238,7 +241,9 @@ where
     }
 
     fn show_menu(&self) {
-        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
         if let Some(ui) = self.ui.get() {
             ui.show_menu(mtm);
         }

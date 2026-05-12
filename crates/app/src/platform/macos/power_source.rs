@@ -5,7 +5,7 @@ use core_foundation::array::CFArray;
 use core_foundation::base::TCFType;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
-use core_foundation::runloop::{CFRunLoopAddSource, CFRunLoopGetMain, kCFRunLoopCommonModes};
+use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetMain};
 use core_foundation::string::CFString;
 use open_lid_core::mode::PowerSource;
 use open_lid_core::platform::{PowerSourceCallback, PowerSourceMonitor};
@@ -30,11 +30,7 @@ impl MacPowerSourceMonitor {
             anyhow::bail!("IOPSNotificationCreateRunLoopSource returned null");
         }
         unsafe {
-            CFRunLoopAddSource(
-                CFRunLoopGetMain(),
-                src as *mut _,
-                kCFRunLoopCommonModes,
-            );
+            CFRunLoopAddSource(CFRunLoopGetMain(), src as *mut _, kCFRunLoopCommonModes);
         }
         Ok(Self { inner })
     }
@@ -57,11 +53,15 @@ impl MacPowerSourceMonitor {
             if !list.is_null() {
                 let arr: CFArray = unsafe { CFArray::wrap_under_create_rule(list as *const _) };
                 if let Some(ps) = arr.get(0) {
-                    let desc_ref = unsafe { IOPSGetPowerSourceDescription(blob, *ps as core_foundation_sys::base::CFTypeRef) };
+                    let desc_ref = unsafe {
+                        IOPSGetPowerSourceDescription(
+                            blob,
+                            *ps as core_foundation_sys::base::CFTypeRef,
+                        )
+                    };
                     if !desc_ref.is_null() {
-                        let dict: CFDictionary = unsafe {
-                            CFDictionary::wrap_under_get_rule(desc_ref as *const _)
-                        };
+                        let dict: CFDictionary =
+                            unsafe { CFDictionary::wrap_under_get_rule(desc_ref as *const _) };
                         let key = CFString::new("Current Capacity");
                         if let Some(v) = dict.find(key.as_concrete_TypeRef() as *const _) {
                             let n = unsafe { CFNumber::wrap_under_get_rule(*v as *const _) };

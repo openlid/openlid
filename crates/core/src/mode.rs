@@ -95,7 +95,9 @@ pub enum LidState {
 pub enum PowerSource {
     #[default]
     Ac,
-    Battery { percent: u8 },
+    Battery {
+        percent: u8,
+    },
 }
 
 impl Schedule {
@@ -189,7 +191,11 @@ mod tests {
     #[test]
     fn schedule_day_not_in_flags_inactive() {
         let sched = Schedule {
-            days: DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI,
+            days: DaysOfWeek::MON
+                | DaysOfWeek::TUE
+                | DaysOfWeek::WED
+                | DaysOfWeek::THU
+                | DaysOfWeek::FRI,
             start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
             end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
         };

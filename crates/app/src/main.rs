@@ -87,11 +87,17 @@ fn setup_logging() -> Result<()> {
     use tracing_subscriber::EnvFilter;
     let dirs = ProjectDirs::from("io", "openlid", "open-lid")
         .ok_or_else(|| anyhow::anyhow!("no home directory"))?;
-    let log_dir = dirs.data_dir().parent().unwrap_or(dirs.data_dir()).join("Logs/open-lid");
+    let log_dir = dirs
+        .data_dir()
+        .parent()
+        .unwrap_or(dirs.data_dir())
+        .join("Logs/open-lid");
     std::fs::create_dir_all(&log_dir).ok();
     let file = tracing_appender::rolling::daily(&log_dir, "app.log");
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_env("OPEN_LID_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_env("OPEN_LID_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(file)
         .with_ansi(false)
         .init();

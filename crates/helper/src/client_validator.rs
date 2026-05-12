@@ -8,8 +8,8 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
 use security_framework_sys::base::errSecSuccess;
 use security_framework_sys::code_signing::{
-    kSecGuestAttributeAudit, SecCodeCheckValidity, SecCodeCopyGuestWithAttributes,
-    SecCodeRef, SecRequirementCreateWithString, SecRequirementRef,
+    kSecGuestAttributeAudit, SecCodeCheckValidity, SecCodeCopyGuestWithAttributes, SecCodeRef,
+    SecRequirementCreateWithString, SecRequirementRef,
 };
 
 pub struct ClientValidator {
@@ -40,9 +40,7 @@ impl ClientValidator {
         let token_data = CFData::from_buffer(&audit_token);
 
         // SAFETY: kSecGuestAttributeAudit is a valid CFStringRef exported by the Security framework.
-        let token_key = unsafe {
-            CFString::wrap_under_get_rule(kSecGuestAttributeAudit)
-        };
+        let token_key = unsafe { CFString::wrap_under_get_rule(kSecGuestAttributeAudit) };
 
         let attrs =
             CFDictionary::from_CFType_pairs(&[(token_key.as_CFType(), token_data.as_CFType())]);
@@ -70,9 +68,7 @@ impl ClientValidator {
         if status != errSecSuccess || req.is_null() {
             // SAFETY: guest was successfully created above; we must release it.
             unsafe { core_foundation_sys::base::CFRelease(guest as *const _) };
-            return Err(anyhow!(
-                "SecRequirementCreateWithString failed: {status}"
-            ));
+            return Err(anyhow!("SecRequirementCreateWithString failed: {status}"));
         }
 
         // SAFETY: both guest and req are valid non-null refs created above.
