@@ -175,7 +175,7 @@ components = ["rustfmt", "clippy"]
 
 ```toml
 [workspace]
-members = ["crates/core", "crates/app", "crates/helper", "xtask"]
+members = ["crates/core", "crates/helper-protocol", "crates/app", "crates/helper", "xtask"]
 resolver = "2"
 
 [workspace.package]
@@ -189,9 +189,9 @@ repository = "https://github.com/diyanbogdanov/open-lid"
 # Internal
 open-lid-core = { path = "crates/core" }
 
-# Apple bindings
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSXPCListener", "NSXPCInterface", "NSObject", "NSRunLoop"] }
+# Apple bindings (versions + features verified by Phase 0 spike)
+objc2 = { version = "0.6", features = ["exception"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSObject", "NSRunLoop", "block2"] }
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSWindow", "NSAlert"] }
 block2 = "0.6"
 core-foundation = "0.10"
@@ -234,6 +234,37 @@ cargo metadata --no-deps > /dev/null && echo OK
 ```bash
 git add Cargo.toml rust-toolchain.toml
 git commit -m "chore: initialize cargo workspace"
+```
+
+---
+
+### Task 1A: Create `helper-protocol` Crate (from spike findings)
+
+**Files:**
+- Create: `crates/helper-protocol/Cargo.toml`
+- Create: `crates/helper-protocol/build.rs`
+- Create: `crates/helper-protocol/src/lib.rs`
+- Create: `crates/helper-protocol/objc/OpenLidHelperProtocol.h`
+- Create: `crates/helper-protocol/objc/OpenLidHelperProtocol.m`
+
+**Why:** The Phase 0 spike (`docs/superpowers/notes/2026-05-10-objc2-xpc-spike-findings.md`) discovered that NSXPC requires Clang-compiled protocol metadata that Rust's `extern_protocol!` macro cannot produce. The fix is a tiny mixed-Rust+ObjC workspace member that emits a real `.o` file containing the Clang-generated protocol descriptor. Both `crates/helper` (Task 14) and `crates/app` (Task 20) will depend on this crate.
+
+- [ ] **Step 1: Copy the crate contents from the spike findings doc**
+
+Read `docs/superpowers/notes/2026-05-10-objc2-xpc-spike-findings.md`, sections 5 ("The shared protocol crate") and the production .h/.m content. Create the four files using exactly the code shown there. The findings doc is the canonical source — if anything in the steps below conflicts with it, the findings doc wins.
+
+- [ ] **Step 2: Verify it builds**
+
+```bash
+cargo build -p open-lid-helper-protocol
+# Expected: clean build; build.rs runs cc to compile OpenLidHelperProtocol.m
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add crates/helper-protocol
+git commit -m "feat(helper-protocol): Clang-compiled NSXPC protocol metadata"
 ```
 
 ---
