@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or ref to release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  release:
+    name: build DMG and publish draft release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install create-dmg
+        run: brew install create-dmg
+
+      - name: build .app bundle (ad-hoc signed)
+        run: ./scripts/build-app-bundle.sh
+
+      # Resolve the version string once into an env var so we don't reference
+      # ${{ github.ref_name }} repeatedly across `run:` steps (defensive: tag
+      # names are constrained, but env-passing is the documented safe pattern).
+      - name: resolve version
+        id: ver
+        env:
+          RAW_REF: ${{ github.event.inputs.ref || github.ref_name }}
+        run: |
+          # Strip refs/tags/ prefix if present (workflow_dispatch might pass v0.1.0 directly).
+          version="${RAW_REF#refs/tags/}"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: create DMG
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # Stage the .app in an empty folder so create-dmg only shows the app.
+          mkdir -p dmg-stage
+          cp -R target/bundle/OpenLid.app dmg-stage/
+          create-dmg \
+            --volname "Open-Lid" \
+            --window-pos 200 120 \
+            --window-size 600 320 \
+            --icon-size 100 \
+            --icon "OpenLid.app" 175 120 \
+            --hide-extension "OpenLid.app" \
+            --app-drop-link 425 120 \
+            "OpenLid-${VERSION}.dmg" \
+            dmg-stage/
+
+      - name: generate SHA-256 checksum
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          shasum -a 256 "OpenLid-${VERSION}.dmg" > "OpenLid-${VERSION}.dmg.sha256"
+          cat "OpenLid-${VERSION}.dmg.sha256"
+
+      - name: extract release notes from CHANGELOG
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # Find the section matching this version. The CHANGELOG format is:
+          #   ## [0.1.0] - 2026-05-12
+          # so we strip a leading `v` from the tag name and grep between
+          # consecutive `## [` headers.
+          plain="${VERSION#v}"
+          awk -v ver="$plain" '
+            $0 ~ "^## \\[" { in_section = (index($0, "[" ver "]") > 0); next }
+            in_section { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          # If we got nothing (CHANGELOG not updated yet), fall back to a stub.
+          if [ ! -s RELEASE_NOTES.md ]; then
+            printf 'Release %s\n\nSee [CHANGELOG.md](CHANGELOG.md) for details.\n' "$VERSION" > RELEASE_NOTES.md
+          fi
+          echo "--- RELEASE_NOTES.md ---"
+          cat RELEASE_NOTES.md
+
+      - name: publish draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          # tag_name defaults to github.ref for tag pushes; for manual dispatch
+          # we set it from the user-supplied ref.
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: ${{ steps.ver.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: true
+          files: |
+            OpenLid-*.dmg
+            OpenLid-*.dmg.sha256
