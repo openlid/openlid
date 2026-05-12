@@ -44,6 +44,9 @@ use std::sync::Arc;
 pub trait MenuActions: Send + Sync {
     /// Single-click / "Turn On" / "Turn Off". Uses default duration from prefs.
     fn toggle(&self);
+    /// Right-click or option-click on the status item button: show the menu.
+    /// Implementation is expected to call `UIShared::show_menu`.
+    fn show_menu(&self);
     /// Explicit "Activate for N minutes" from the submenu. `None` = indefinite.
     fn activate_for_minutes(&self, minutes: Option<u32>);
     /// "Preferences…" — opens the prefs window.
@@ -75,6 +78,33 @@ define_class!(
         #[unsafe(method(toggle:))]
         fn toggle(&self, _sender: Option<&AnyObject>) {
             if let Some(actions) = self.ivars().actions.get() {
+                actions.toggle();
+            }
+        }
+
+        /// Button click on the status item. Inspect the current event to
+        /// decide: left click → toggle; right-click or option-click → menu.
+        ///
+        /// SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(statusItemClicked:))]
+        fn status_item_clicked(&self, _sender: Option<&AnyObject>) {
+            let Some(actions) = self.ivars().actions.get() else { return };
+            let Some(mtm) = MainThreadMarker::new() else { return };
+            // SAFETY: `NSApplication::sharedApplication` returns an autoreleased
+            // singleton; reading `currentEvent` is documented as main-thread-safe.
+            let app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            let is_right_or_option = if let Some(event) = app.currentEvent() {
+                let event_type = event.r#type();
+                let is_right = event_type == objc2_app_kit::NSEventType::RightMouseUp;
+                let modifiers = event.modifierFlags();
+                let has_option = modifiers.contains(objc2_app_kit::NSEventModifierFlags::Option);
+                is_right || has_option
+            } else {
+                false
+            };
+            if is_right_or_option {
+                actions.show_menu();
+            } else {
                 actions.toggle();
             }
         }

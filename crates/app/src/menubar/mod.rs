@@ -169,6 +169,13 @@ where
         self.refresh();
     }
 
+    fn show_menu(&self) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        if let Some(ui) = self.ui.get() {
+            ui.show_menu(mtm);
+        }
+    }
+
     fn activate_for_minutes(&self, minutes: Option<u32>) {
         let until = minutes.map(|m| Local::now() + Duration::minutes(m as i64));
         if let Err(e) = self.runtime.set_enabled(true, until) {

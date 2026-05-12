@@ -11,7 +11,9 @@
 use super::icons::laptop_icon;
 use super::menu::{build_menu, refresh_menu, BuiltMenu, MenuActions, MenuHandler};
 use objc2::rc::Retained;
-use objc2_app_kit::{NSStatusBar, NSStatusItem, NSVariableStatusItemLength};
+use objc2::runtime::AnyObject;
+use objc2::sel;
+use objc2_app_kit::{NSEventMask, NSStatusBar, NSStatusItem, NSVariableStatusItemLength};
 use objc2_foundation::{MainThreadMarker, NSString};
 use open_lid_core::ipc::control::Snapshot;
 use std::sync::Arc;
@@ -38,6 +40,19 @@ unsafe impl Send for UIShared {}
 unsafe impl Sync for UIShared {}
 
 impl UIShared {
+    /// Programmatically pop the menu (in response to a right-click or
+    /// option-click). The pattern is from upstream/keep-awake-style: temporarily
+    /// install the menu on the status item, fire a button click to make
+    /// AppKit show it, then immediately un-install so subsequent left-clicks
+    /// route back through the button action.
+    pub fn show_menu(&self, mtm: MainThreadMarker) {
+        if let Some(button) = self.status_item.button(mtm) {
+            self.status_item.setMenu(Some(&self.menu.menu));
+            unsafe { button.performClick(None) };
+            self.status_item.setMenu(None);
+        }
+    }
+
     /// Recompute the status item's button image and the menu's mutable items
     /// from the snapshot. Caller MUST be on the main thread.
     pub fn refresh(&self, snap: &Snapshot, mtm: MainThreadMarker) {
@@ -90,7 +105,20 @@ impl StatusItemUI {
 
         let handler = MenuHandler::new(mtm, actions);
         let menu = build_menu(mtm, &handler);
-        status_item.setMenu(Some(&menu.menu));
+
+        // keep-awake-style/upstream pattern: the button's action handles BOTH left
+        // and right clicks. `setMenu(None)` keeps the menu un-installed so
+        // left-click reaches our action; on right/option click the action
+        // calls UIShared::show_menu which temporarily attaches it.
+        if let Some(button) = status_item.button(mtm) {
+            let handler_obj: &AnyObject = handler.as_ref();
+            unsafe {
+                button.setTarget(Some(handler_obj));
+                button.setAction(Some(sel!(statusItemClicked:)));
+                let mask = NSEventMask::LeftMouseUp | NSEventMask::RightMouseUp;
+                button.sendActionOn(mask);
+            }
+        }
 
         let shared = Arc::new(UIShared { status_item, menu });
 
