@@ -45,7 +45,7 @@ jobs:
       # Get the token from https://app.codecov.io/gh/diyanbogdanov/open-lid/settings
       # (after creating the Codecov account / linking the repo).
       - name: upload to codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
