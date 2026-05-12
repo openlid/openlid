@@ -97,7 +97,24 @@ impl Config {
 
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
         match std::fs::read_to_string(path) {
-            Ok(s) => Ok(toml::from_str(&s)?),
+            Ok(s) => {
+                let cfg: Config = toml::from_str(&s)?;
+                if cfg.version > SCHEMA_VERSION {
+                    // Forward-compat: a config from a newer schema. Serde has
+                    // already dropped any unknown fields. Warn the user so they
+                    // know why a downgraded binary may behave unexpectedly, but
+                    // don't refuse the load — locking someone out of their own
+                    // config because they tested a beta is a worse failure mode
+                    // than degraded behavior on a personal-use utility.
+                    tracing::warn!(
+                        "loaded config has a newer schema version (config={}, build={}); \
+                         unknown fields were ignored",
+                        cfg.version,
+                        SCHEMA_VERSION,
+                    );
+                }
+                Ok(cfg)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
             Err(e) => Err(ConfigError::Io(e)),
         }
@@ -208,5 +225,29 @@ mod tests {
         let cfg = Config::load(&p).unwrap();
         assert_eq!(cfg.version, 1);
         assert!(cfg.enabled);
+    }
+
+    #[test]
+    fn load_with_newer_version_preserves_known_fields() {
+        // A future schema (version > SCHEMA_VERSION) is loaded under the
+        // current binary. Under Option A (warn-and-continue), known fields
+        // are still parsed and the user is not locked out of their config.
+        // A `tracing::warn!` is emitted as a side effect — not asserted
+        // here because doing so would require pulling in `tracing-test` as
+        // a dev-dependency for one assertion. The behavior under test is
+        // "doesn't fail and preserves known fields".
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("config.toml");
+        std::fs::write(&p, "version = 999\nenabled = true\nstart_at_login = true\n").unwrap();
+        let cfg = Config::load(&p).expect("load should not error on newer version");
+        assert_eq!(cfg.version, 999);
+        assert!(
+            cfg.enabled,
+            "known field should be preserved under Option A"
+        );
+        assert!(
+            cfg.start_at_login,
+            "known field should be preserved under Option A"
+        );
     }
 }
