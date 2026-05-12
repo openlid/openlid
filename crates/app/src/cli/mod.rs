@@ -26,13 +26,9 @@ pub enum Command {
         json: bool,
     },
     /// Activate with a timer for a duration (e.g., 2h, 30m, 1h30m)
-    For {
-        duration: String,
-    },
+    For { duration: String },
     /// Activate with a timer until a wall-clock time (HH:MM or YYYY-MM-DDTHH:MM)
-    Until {
-        time: String,
-    },
+    Until { time: String },
     /// Config operations
     #[command(subcommand)]
     Config(ConfigArg),

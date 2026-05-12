@@ -4,8 +4,7 @@
 use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
 use interprocess::local_socket::{
-    GenericFilePath, ListenerOptions, Stream, ToFsName,
-    traits::ListenerExt,
+    traits::ListenerExt, GenericFilePath, ListenerOptions, Stream, ToFsName,
 };
 use open_lid_core::ipc::control::{ControlRequest, ControlResponse};
 use open_lid_core::platform::{
@@ -78,10 +77,7 @@ where
     Ok(())
 }
 
-fn dispatch<P, L, S, D>(
-    req: ControlRequest,
-    rt: &Arc<StateRuntime<P, L, S, D>>,
-) -> ControlResponse
+fn dispatch<P, L, S, D>(req: ControlRequest, rt: &Arc<StateRuntime<P, L, S, D>>) -> ControlResponse
 where
     P: PowerController + Send + Sync + 'static,
     L: LidObserver + Send + Sync + 'static,
@@ -109,7 +105,11 @@ where
         }
     };
     match result {
-        Ok(()) => ControlResponse::Ok { state: rt.snapshot() },
-        Err(e) => ControlResponse::Error { message: format!("{e:#}") },
+        Ok(()) => ControlResponse::Ok {
+            state: rt.snapshot(),
+        },
+        Err(e) => ControlResponse::Error {
+            message: format!("{e:#}"),
+        },
     }
 }

@@ -20,7 +20,10 @@ struct State {
 impl IdleExit {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(State { generation: 0, armed: false })),
+            inner: Arc::new(Mutex::new(State {
+                generation: 0,
+                armed: false,
+            })),
         }
     }
 
@@ -117,6 +120,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(80));
         assert!(!fired_first.load(Ordering::SeqCst));
         std::thread::sleep(Duration::from_millis(120));
-        assert!(fired_second.load(Ordering::SeqCst), "elapsed: {:?}", start.elapsed());
+        assert!(
+            fired_second.load(Ordering::SeqCst),
+            "elapsed: {:?}",
+            start.elapsed()
+        );
     }
 }

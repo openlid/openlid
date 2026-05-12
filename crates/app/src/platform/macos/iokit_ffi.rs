@@ -1,7 +1,12 @@
 //! Raw FFI for the IOKit calls we need. We avoid pulling in a heavy
 //! IOKit crate because we only need a handful of symbols.
 
-#![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code)]
+#![allow(
+    non_camel_case_types,
+    non_snake_case,
+    non_upper_case_globals,
+    dead_code
+)]
 
 use std::ffi::c_void;
 

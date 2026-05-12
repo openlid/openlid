@@ -107,7 +107,10 @@ struct Shared {
 
 impl Shared {
     fn new(helper: Arc<dyn HelperHandle>, active_connections: Arc<AtomicUsize>) -> Self {
-        Self { helper, active_connections }
+        Self {
+            helper,
+            active_connections,
+        }
     }
 }
 
@@ -404,8 +407,7 @@ pub fn run_listener<P: Pmset + Send + Sync + 'static>(
     let active_connections = Arc::new(AtomicUsize::new(0));
 
     let service_name = NSString::from_str(mach_service_name);
-    let listener =
-        NSXPCListener::initWithMachServiceName(NSXPCListener::alloc(), &service_name);
+    let listener = NSXPCListener::initWithMachServiceName(NSXPCListener::alloc(), &service_name);
 
     let delegate = ListenerDelegate::new(Shared::new(
         Arc::clone(&helper_handle),
@@ -421,9 +423,7 @@ pub fn run_listener<P: Pmset + Send + Sync + 'static>(
     let _delegate_leak = Box::leak(Box::new(delegate));
 
     listener.resume();
-    tracing::info!(
-        "NSXPC listener resumed on Mach service {mach_service_name}; entering run loop"
-    );
+    tracing::info!("NSXPC listener resumed on Mach service {mach_service_name}; entering run loop");
 
     // Block forever. The only exit path is `std::process::exit(0)` from the
     // idle-exit timer, or a fatal signal from launchd.
@@ -458,8 +458,14 @@ mod tests {
 
         helper.handle_set_sleep_prevention(true).unwrap();
 
-        assert!(marker.exists(), "marker should be written before pmset toggle");
-        assert!(*helper.pmset.enabled.lock().unwrap(), "pmset should be set to disablesleep=1");
+        assert!(
+            marker.exists(),
+            "marker should be written before pmset toggle"
+        );
+        assert!(
+            *helper.pmset.enabled.lock().unwrap(),
+            "pmset should be set to disablesleep=1"
+        );
         assert_eq!(*helper.pmset.set_calls.lock().unwrap(), vec![true]);
     }
 
@@ -475,7 +481,10 @@ mod tests {
 
         helper.handle_set_sleep_prevention(false).unwrap();
 
-        assert!(!marker.exists(), "marker should be removed after re-enabling sleep");
+        assert!(
+            !marker.exists(),
+            "marker should be removed after re-enabling sleep"
+        );
         assert!(!*helper.pmset.enabled.lock().unwrap());
         assert_eq!(*helper.pmset.set_calls.lock().unwrap(), vec![true, false]);
     }

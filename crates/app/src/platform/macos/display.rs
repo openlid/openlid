@@ -18,7 +18,9 @@ impl DisplayController for MacDisplayController {
         if r != 0 {
             return false;
         }
-        ids.iter().take(count as usize).any(|d| unsafe { CGDisplayIsBuiltin(*d) } == 0)
+        ids.iter()
+            .take(count as usize)
+            .any(|d| unsafe { CGDisplayIsBuiltin(*d) } == 0)
     }
 
     fn force_display_sleep(&self) -> Result<(), PlatformError> {
