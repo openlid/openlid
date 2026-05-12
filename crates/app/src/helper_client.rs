@@ -39,6 +39,7 @@ use objc2_foundation::{
 use open_lid_core::platform::{PlatformError, PowerController};
 use std::ffi::CStr;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
@@ -122,6 +123,14 @@ fn fill_slot<T>(slot: &Slot<T>, value: T) {
 /// helper exits, so we do not need to recreate this between calls.
 pub struct HelperClient {
     conn: Retained<NSXPCConnection>,
+    /// Tracks whether the connection has been invalidated. When `true`, all
+    /// `set_sleep_prevention` / `get_status` / `ping` calls short-circuit
+    /// with `PlatformError::HelperUnavailable` instead of attempting an XPC
+    /// send. This is critical when the helper isn't installed: without the
+    /// check, `msg_send!` against the degenerate __NSXPCInterfaceProxy panics
+    /// with "method not found" rather than returning an error, taking down
+    /// the menu bar app before it has a chance to render.
+    invalidated: Arc<AtomicBool>,
 }
 
 // SAFETY: NSXPCConnection is documented as thread-safe for `remoteObjectProxy`
@@ -158,9 +167,10 @@ impl HelperClient {
 
         // Lifecycle handlers. These are NOT reply blocks, so NSXPC does not
         // introspect their signatures — plain `RcBlock::new` is sufficient.
-        // We use them to surface helper restarts in the logs; a fuller
-        // implementation might bubble these events back to the menubar UI.
-        let invalidation_block = RcBlock::new(|| {
+        let invalidated = Arc::new(AtomicBool::new(false));
+        let invalidation_flag = Arc::clone(&invalidated);
+        let invalidation_block = RcBlock::new(move || {
+            invalidation_flag.store(true, Ordering::SeqCst);
             tracing::warn!("XPC connection to helper invalidated");
         });
         conn.setInvalidationHandler(Some(&invalidation_block));
@@ -174,11 +184,21 @@ impl HelperClient {
 
         tracing::info!("HelperClient connected to {HELPER_MACH_SERVICE_NAME}");
 
-        Ok(HelperClient { conn })
+        Ok(HelperClient { conn, invalidated })
+    }
+
+    /// Returns true if this connection has been observed to be invalid. We
+    /// check this proactively before each XPC call to avoid the "method not
+    /// found" panic on a degenerate proxy.
+    fn is_unavailable(&self) -> bool {
+        self.invalidated.load(Ordering::SeqCst)
     }
 
     /// Toggle sleep prevention on the helper. Blocks up to `REPLY_TIMEOUT`.
     pub fn set_sleep_prevention(&self, enabled: bool) -> Result<(), PlatformError> {
+        if self.is_unavailable() {
+            return Err(PlatformError::HelperUnavailable);
+        }
         let (tx, rx) = mpsc::sync_channel::<Result<(), PlatformError>>(1);
         let slot: Slot<Result<(), PlatformError>> = Arc::new(Mutex::new(Some(tx)));
 
@@ -225,12 +245,22 @@ impl HelperClient {
         // connection's remoteObjectInterface was configured with. `Bool::new`
         // gives us the BOOL ABI type, and `&*reply_block` is a `&Block<...>`
         // with the correct signature.
-        unsafe {
+        //
+        // catch_unwind: if the connection invalidated between our
+        // `is_unavailable` check and now (race window with the async
+        // invalidation handler), objc2's runtime check on the degenerate
+        // proxy panics with "method not found". Catch it, mark the connection
+        // dead, return a clean error.
+        let send_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
             let _: () = msg_send![
                 &*proxy,
                 setSleepPreventionEnabled: Bool::new(enabled),
                 withReply: &*reply_block
             ];
+        }));
+        if send_result.is_err() {
+            self.invalidated.store(true, Ordering::SeqCst);
+            return Err(PlatformError::HelperUnavailable);
         }
 
         recv_or_timeout(&rx)
@@ -239,6 +269,9 @@ impl HelperClient {
     /// Query the current sleep-prevention state from the helper.
     #[allow(dead_code)] // Reserved for Plan 2 health check.
     pub fn get_status(&self) -> Result<bool, PlatformError> {
+        if self.is_unavailable() {
+            return Err(PlatformError::HelperUnavailable);
+        }
         let (tx, rx) = mpsc::sync_channel::<Result<bool, PlatformError>>(1);
         let slot: Slot<Result<bool, PlatformError>> = Arc::new(Mutex::new(Some(tx)));
 
@@ -272,11 +305,15 @@ impl HelperClient {
         let proxy: Retained<AnyObject> = self.conn.remoteObjectProxyWithErrorHandler(&err_handler);
 
         // SAFETY: as in set_sleep_prevention.
-        unsafe {
+        let send_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
             let _: () = msg_send![
                 &*proxy,
                 getSleepPreventionStatusWithReply: &*reply_block
             ];
+        }));
+        if send_result.is_err() {
+            self.invalidated.store(true, Ordering::SeqCst);
+            return Err(PlatformError::HelperUnavailable);
         }
 
         recv_or_timeout(&rx)
@@ -286,6 +323,9 @@ impl HelperClient {
     /// connection coming up implicitly on the first `set_sleep_prevention`).
     #[allow(dead_code)]
     pub fn ping(&self) -> Result<(), PlatformError> {
+        if self.is_unavailable() {
+            return Err(PlatformError::HelperUnavailable);
+        }
         let (tx, rx) = mpsc::sync_channel::<Result<(), PlatformError>>(1);
         let slot: Slot<Result<(), PlatformError>> = Arc::new(Mutex::new(Some(tx)));
 
@@ -307,8 +347,12 @@ impl HelperClient {
         let proxy: Retained<AnyObject> = self.conn.remoteObjectProxyWithErrorHandler(&err_handler);
 
         // SAFETY: as in set_sleep_prevention.
-        unsafe {
+        let send_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
             let _: () = msg_send![&*proxy, pingWithReply: &*reply_block];
+        }));
+        if send_result.is_err() {
+            self.invalidated.store(true, Ordering::SeqCst);
+            return Err(PlatformError::HelperUnavailable);
         }
 
         recv_or_timeout(&rx)
