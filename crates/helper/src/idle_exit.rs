@@ -95,9 +95,10 @@ mod tests {
         t.arm_for_test(Duration::from_millis(100), move || {
             f2.store(true, Ordering::SeqCst);
         });
-        std::thread::sleep(Duration::from_millis(30));
+        // Disarm before sleeping so CI scheduler pauses can't reorder
+        // arm/disarm around the timer thread's wakeup.
         t.disarm();
-        std::thread::sleep(Duration::from_millis(150));
+        std::thread::sleep(Duration::from_millis(200));
         assert!(!fired.load(Ordering::SeqCst));
     }
 
