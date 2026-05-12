@@ -142,17 +142,19 @@ unsafe impl Sync for HelperClient {}
 impl HelperClient {
     /// Build a new client bound to the `io.openlid.helper` Mach service.
     ///
-    /// In dev builds (Plan 2 will switch this) we connect without the
-    /// `kNSXPCConnectionPrivileged` flag — the helper is a regular Mach
-    /// service we can reach as the unprivileged user. The Mach lookup itself
-    /// is non-blocking; the actual handshake (and helper launch by launchd)
-    /// happens lazily on first message send.
+    /// Uses `kNSXPCConnectionPrivileged` (`1 << 12`) because the helper is
+    /// installed in `/Library/LaunchDaemons/` (system domain). Without this
+    /// flag, NSXPC looks up the service in the per-user domain, doesn't find
+    /// it, and invalidates the connection before launchd can route the
+    /// bootstrap. The Mach lookup itself is non-blocking; the actual
+    /// handshake (and helper launch by launchd) happens lazily on first
+    /// message send.
     pub fn new() -> anyhow::Result<Self> {
         let service_name = NSString::from_str(HELPER_MACH_SERVICE_NAME);
         let conn = NSXPCConnection::initWithMachServiceName_options(
             NSXPCConnection::alloc(),
             &service_name,
-            NSXPCConnectionOptions(0),
+            NSXPCConnectionOptions(1 << 12),
         );
 
         // The remote interface metadata MUST be a Clang-emitted Protocol —
