@@ -252,7 +252,10 @@ where
         // Original Open-Lid value-prop: if we're keeping the system awake and
         // the user just closed the lid, force the display off to save battery
         // and reduce heat. Skipped if an external display is attached.
-        if was_closing && self.snapshot().preventing_sleep_now && !self.display.has_external_display() {
+        if was_closing
+            && self.snapshot().preventing_sleep_now
+            && !self.display.has_external_display()
+        {
             let _ = self.display.force_display_sleep();
         }
         self.notify_listeners();
@@ -273,9 +276,7 @@ where
             )
         };
         if should_auto_deactivate {
-            tracing::info!(
-                "battery threshold reached; auto-deactivating sleep prevention"
-            );
+            tracing::info!("battery threshold reached; auto-deactivating sleep prevention");
             let mut s = self.state.lock().unwrap();
             s.enabled = false;
             s.until = None;
@@ -389,13 +390,26 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MockPs(Mutex<Option<open_lid_core::platform::PowerSourceCallback>>);
+    struct MockPs {
+        cb: Mutex<Option<open_lid_core::platform::PowerSourceCallback>>,
+        initial: Mutex<PowerSource>,
+    }
+    impl MockPs {
+        /// Simulate a power-source change by invoking the stored callback,
+        /// the same way the real IOKit monitor does.
+        fn fire(&self, new: PowerSource) {
+            let guard = self.cb.lock().unwrap();
+            if let Some(cb) = guard.as_ref() {
+                cb(new);
+            }
+        }
+    }
     impl PowerSourceMonitor for MockPs {
         fn current(&self) -> PowerSource {
-            PowerSource::Ac
+            *self.initial.lock().unwrap()
         }
         fn subscribe(&self, cb: open_lid_core::platform::PowerSourceCallback) {
-            *self.0.lock().unwrap() = Some(cb);
+            *self.cb.lock().unwrap() = Some(cb);
         }
     }
 
@@ -446,5 +460,288 @@ mod tests {
         assert!(rt.snapshot().until.is_some());
         rt.set_enabled(false, None).unwrap();
         assert!(rt.snapshot().until.is_none());
+    }
+
+    // --- helpers ------------------------------------------------------------
+
+    type TestRt = Arc<StateRuntime<MockPower, MockLid, MockPs, MockDisplay>>;
+    type TestFixture = (
+        TestRt,
+        Arc<MockPower>,
+        Arc<MockPs>,
+        Arc<MockDisplay>,
+        tempfile::TempDir,
+    );
+
+    fn fresh_runtime() -> TestFixture {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let power = Arc::new(MockPower::default());
+        let lid = Arc::new(MockLid::new(LidState::Open));
+        let ps = Arc::new(MockPs::default());
+        let disp = Arc::new(MockDisplay::default());
+        let rt = StateRuntime::new(power.clone(), lid, ps.clone(), disp.clone(), cfg).unwrap();
+        (rt, power, ps, disp, dir)
+    }
+
+    // --- timer expiry -------------------------------------------------------
+
+    #[test]
+    fn snapshot_reports_preventing_false_when_timer_is_in_the_past() {
+        // Verify the pure decision function via the runtime: if `until` is in
+        // the past, `preventing_sleep_now` is false even when `enabled = true`.
+        // We avoid sleeping on a thread by writing a past `until` directly.
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.enabled = true;
+            s.until = Some(Local::now() - chrono::Duration::seconds(1));
+        }
+        assert!(!rt.snapshot().preventing_sleep_now);
+    }
+
+    #[test]
+    fn reconcile_clears_enabled_when_timer_expired() {
+        // Drive the runtime's own reconcile path (not just the pure helper):
+        // set a past `until`, call `set_enabled` to force reconcile, and
+        // observe that the runtime cleared `enabled` and `until`.
+        let (rt, power, _ps, _disp, _dir) = fresh_runtime();
+        // Set a future timer so reconcile arms prevent_sleep first.
+        rt.set_enabled(true, Some(Local::now() + chrono::Duration::hours(1)))
+            .unwrap();
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
+        // Now rewrite `until` to the past directly, then bounce reconcile.
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.until = Some(Local::now() - chrono::Duration::seconds(1));
+        }
+        // Toggling enabled triggers reconcile, which sees the expired timer
+        // and clears `enabled`.
+        rt.set_enabled(true, Some(Local::now() - chrono::Duration::seconds(1)))
+            .unwrap();
+        let snap = rt.snapshot();
+        assert!(!snap.enabled);
+        assert!(snap.until.is_none());
+        assert!(!snap.preventing_sleep_now);
+        // We should have called allow_sleep at least once now that we
+        // transitioned from prevented to not-prevented.
+        assert!(power.allow_calls.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[test]
+    fn future_timer_keeps_prevention_active() {
+        let (rt, power, _ps, _disp, _dir) = fresh_runtime();
+        rt.set_enabled(true, Some(Local::now() + chrono::Duration::hours(1)))
+            .unwrap();
+        assert!(rt.snapshot().preventing_sleep_now);
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
+    }
+
+    // --- battery threshold --------------------------------------------------
+
+    #[test]
+    fn battery_below_threshold_auto_deactivates_when_enabled() {
+        let (rt, power, ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            battery_threshold_pct: Some(Some(20)),
+            ..Default::default()
+        })
+        .unwrap();
+        rt.set_enabled(true, None).unwrap();
+        assert!(rt.snapshot().enabled);
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
+
+        // Fire a power-change event: dropped to 15% battery.
+        ps.fire(PowerSource::Battery { percent: 15 });
+
+        let snap = rt.snapshot();
+        assert!(
+            !snap.enabled,
+            "should auto-deactivate at battery < threshold"
+        );
+        assert!(snap.until.is_none());
+        assert!(power.allow_calls.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[test]
+    fn battery_at_or_above_threshold_does_not_deactivate() {
+        let (rt, _power, ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            battery_threshold_pct: Some(Some(20)),
+            ..Default::default()
+        })
+        .unwrap();
+        rt.set_enabled(true, None).unwrap();
+        // 25% is above the 20% threshold — should NOT auto-deactivate.
+        ps.fire(PowerSource::Battery { percent: 25 });
+        assert!(rt.snapshot().enabled);
+        // 20% is at the threshold — strict `<` means it should also stay on.
+        ps.fire(PowerSource::Battery { percent: 20 });
+        assert!(rt.snapshot().enabled);
+    }
+
+    #[test]
+    fn battery_threshold_does_not_reactivate_after_recovery() {
+        // Per Decision 2: once auto-deactivated, recovering battery does
+        // NOT flip enabled back on — the user must do that explicitly.
+        let (rt, _power, ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            battery_threshold_pct: Some(Some(20)),
+            ..Default::default()
+        })
+        .unwrap();
+        rt.set_enabled(true, None).unwrap();
+        ps.fire(PowerSource::Battery { percent: 10 }); // drops below
+        assert!(!rt.snapshot().enabled);
+        ps.fire(PowerSource::Ac); // plugged back in
+        assert!(!rt.snapshot().enabled, "must not auto-reactivate");
+    }
+
+    #[test]
+    fn battery_threshold_does_not_deactivate_when_already_disabled() {
+        // Edge: if enabled is already false, the power-change handler must
+        // not flip anything just because battery is low.
+        let (rt, power, ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            battery_threshold_pct: Some(Some(50)),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!rt.snapshot().enabled);
+        ps.fire(PowerSource::Battery { percent: 5 });
+        assert!(!rt.snapshot().enabled);
+        // Should never have called prevent_sleep, and allow_sleep was either
+        // never called or only on the initial reconcile (mock starts in
+        // "no last applied" state, so first reconcile may be a no-op).
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 0);
+    }
+
+    // --- listener notification ---------------------------------------------
+
+    #[test]
+    fn listener_fires_on_state_change_with_snapshot() {
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        let fires = Arc::new(AtomicU32::new(0));
+        let last_enabled = Arc::new(AtomicBool::new(false));
+        let f = fires.clone();
+        let le = last_enabled.clone();
+        rt.add_listener(Arc::new(move |snap| {
+            f.fetch_add(1, Ordering::SeqCst);
+            le.store(snap.enabled, Ordering::SeqCst);
+        }));
+        rt.set_enabled(true, None).unwrap();
+        assert!(fires.load(Ordering::SeqCst) >= 1);
+        assert!(last_enabled.load(Ordering::SeqCst));
+        rt.set_enabled(false, None).unwrap();
+        assert!(!last_enabled.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn listener_fires_on_power_source_event() {
+        // Power-source events go through on_power_change, which always calls
+        // notify_listeners at the end.
+        let (rt, _power, ps, _disp, _dir) = fresh_runtime();
+        let fires = Arc::new(AtomicU32::new(0));
+        let f = fires.clone();
+        rt.add_listener(Arc::new(move |_snap| {
+            f.fetch_add(1, Ordering::SeqCst);
+        }));
+        let before = fires.load(Ordering::SeqCst);
+        ps.fire(PowerSource::Battery { percent: 80 });
+        assert!(fires.load(Ordering::SeqCst) > before);
+    }
+
+    #[test]
+    fn multiple_listeners_all_fire() {
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        let a = Arc::new(AtomicU32::new(0));
+        let b = Arc::new(AtomicU32::new(0));
+        let aa = a.clone();
+        let bb = b.clone();
+        rt.add_listener(Arc::new(move |_| {
+            aa.fetch_add(1, Ordering::SeqCst);
+        }));
+        rt.add_listener(Arc::new(move |_| {
+            bb.fetch_add(1, Ordering::SeqCst);
+        }));
+        rt.set_enabled(true, None).unwrap();
+        assert!(a.load(Ordering::SeqCst) >= 1);
+        assert!(b.load(Ordering::SeqCst) >= 1);
+    }
+
+    // --- PrefsPatch ---------------------------------------------------------
+
+    #[test]
+    fn prefs_patch_updates_only_some_fields() {
+        // Each `None` in the patch leaves the corresponding field untouched.
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            start_at_login: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+        let snap1 = rt.snapshot();
+        assert!(snap1.start_at_login);
+
+        // Patch with all-None should not alter prior settings.
+        rt.set_preferences(PrefsPatch::default()).unwrap();
+        let snap2 = rt.snapshot();
+        assert_eq!(snap2.start_at_login, snap1.start_at_login);
+        assert_eq!(snap2.activate_at_launch, snap1.activate_at_launch);
+        assert_eq!(
+            snap2.default_duration_minutes,
+            snap1.default_duration_minutes
+        );
+        assert_eq!(snap2.battery_threshold_pct, snap1.battery_threshold_pct);
+    }
+
+    #[test]
+    fn prefs_patch_default_duration_can_be_cleared() {
+        // Outer Option<Option<u32>>: outer Some means "update", inner None
+        // means "clear the saved default".
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            default_duration_minutes: Some(Some(30)),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(rt.snapshot().default_duration_minutes, Some(30));
+        rt.set_preferences(PrefsPatch {
+            default_duration_minutes: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(rt.snapshot().default_duration_minutes.is_none());
+    }
+
+    #[test]
+    fn prefs_patch_battery_threshold_propagates_to_modifiers() {
+        // Setting the threshold via PrefsPatch should also push the value
+        // into state.modifiers.min_battery so should_prevent_sleep sees it.
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            battery_threshold_pct: Some(Some(40)),
+            ..Default::default()
+        })
+        .unwrap();
+        let s = rt.state.lock().unwrap();
+        assert_eq!(s.modifiers.min_battery, Some(40));
+    }
+
+    #[test]
+    fn prefs_patch_activate_at_launch_toggles_independently() {
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            activate_at_launch: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(rt.snapshot().activate_at_launch);
+        rt.set_preferences(PrefsPatch {
+            activate_at_launch: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(!rt.snapshot().activate_at_launch);
     }
 }
