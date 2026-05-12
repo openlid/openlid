@@ -1,18 +1,50 @@
-use crate::mode::{Mode, Modifiers};
+use crate::mode::Modifiers;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Persisted user configuration. Lives at
+/// `~/Library/Application Support/open-lid/config.toml` on macOS.
+///
+/// Fields are partitioned into three groups:
+///   * Toggle state: `enabled` (persisted so "Restore last state" on launch
+///     works — the default for new installs).
+///   * Modifier rules: `modifiers` (legacy from the mode-based design; the
+///     only one actively wired in v1 is `min_battery`, exposed via the
+///     `battery_threshold_pct` preference).
+///   * UX preferences: `start_at_login`, `activate_at_launch`,
+///     `default_duration_minutes`, `battery_threshold_pct`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Config {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
-    pub mode: Mode,
-    #[serde(default)]
     pub modifiers: Modifiers,
+
+    /// Auto-launch the app on user login. Wired via SMAppService.loginItem
+    /// (or LaunchAgents fallback for unsigned dev builds).
+    #[serde(default)]
+    pub start_at_login: bool,
+
+    /// On every app launch, force `enabled = true` regardless of last
+    /// persisted state. When `false` (the default), the last `enabled`
+    /// value is restored — matches Caffeine's "Activate at launch" off.
+    #[serde(default)]
+    pub activate_at_launch: bool,
+
+    /// Default timer duration for single-click activations, in minutes.
+    /// `None` means indefinite (no timer set).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_duration_minutes: Option<u32>,
+
+    /// Auto-deactivate when battery falls below this percent.
+    /// `None` disables this safeguard.
+    /// Once auto-deactivated, the toggle stays off until the user manually
+    /// reactivates — we don't auto-reactivate on power restore.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub battery_threshold_pct: Option<u8>,
 }
 
 #[derive(Debug, Error)]
@@ -76,12 +108,15 @@ mod tests {
         let p = dir.path().join("subdir").join("config.toml");
         let cfg = Config {
             enabled: true,
-            mode: Mode::AlwaysAwake,
             modifiers: Modifiers {
                 only_on_ac: true,
                 min_battery: Some(25),
                 schedule: None,
             },
+            start_at_login: true,
+            activate_at_launch: false,
+            default_duration_minutes: Some(30),
+            battery_threshold_pct: Some(20),
         };
         cfg.save(&p).unwrap();
         let back = Config::load(&p).unwrap();
@@ -96,5 +131,14 @@ mod tests {
         let tmp = p.with_extension("toml.tmp");
         assert!(!tmp.exists());
         assert!(p.exists());
+    }
+
+    #[test]
+    fn default_has_no_optional_fields_set() {
+        let cfg = Config::default();
+        assert!(!cfg.start_at_login);
+        assert!(!cfg.activate_at_launch);
+        assert!(cfg.default_duration_minutes.is_none());
+        assert!(cfg.battery_threshold_pct.is_none());
     }
 }

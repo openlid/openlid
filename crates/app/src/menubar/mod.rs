@@ -18,8 +18,8 @@ use anyhow::Result;
 use menu::MenuActions;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
+use chrono::{Duration, Local};
 use open_lid_core::config::Config;
-use open_lid_core::mode::Mode;
 use open_lid_core::platform::{
     DisplayController, LidObserver, PowerController, PowerSourceMonitor,
 };
@@ -152,31 +152,40 @@ where
     D: DisplayController + Send + Sync + 'static,
 {
     fn toggle(&self) {
-        let currently_enabled = self.runtime.snapshot().enabled;
-        if let Err(e) = self.runtime.set_enabled(!currently_enabled) {
+        let snap = self.runtime.snapshot();
+        let result = if snap.enabled {
+            // Currently on → turn off (clears any timer too).
+            self.runtime.set_enabled(false, None)
+        } else {
+            // Currently off → turn on, using default duration from prefs.
+            let until = snap
+                .default_duration_minutes
+                .map(|m| Local::now() + Duration::minutes(m as i64));
+            self.runtime.set_enabled(true, until)
+        };
+        if let Err(e) = result {
             tracing::error!("toggle failed: {e:#}");
         }
         self.refresh();
     }
 
-    fn set_mode_lid_closed(&self) {
-        if let Err(e) = self.runtime.set_mode(Mode::LidClosed) {
-            tracing::error!("set_mode(LidClosed) failed: {e:#}");
+    fn activate_for_minutes(&self, minutes: Option<u32>) {
+        let until = minutes.map(|m| Local::now() + Duration::minutes(m as i64));
+        if let Err(e) = self.runtime.set_enabled(true, until) {
+            tracing::error!("activate_for_minutes({minutes:?}) failed: {e:#}");
         }
         self.refresh();
     }
 
-    fn set_mode_always_awake(&self) {
-        if let Err(e) = self.runtime.set_mode(Mode::AlwaysAwake) {
-            tracing::error!("set_mode(AlwaysAwake) failed: {e:#}");
-        }
-        self.refresh();
+    fn open_preferences(&self) {
+        // Wired in Phase 3 (preferences window).
+        tracing::info!("open_preferences: not yet implemented");
     }
 
     fn quit(&self) {
         // 1. Disarm sleep prevention so the helper doesn't keep the machine
         //    awake after we exit.
-        if let Err(e) = self.runtime.set_enabled(false) {
+        if let Err(e) = self.runtime.set_enabled(false, None) {
             tracing::warn!("quit: failed to disarm sleep prevention: {e:#}");
         }
 
