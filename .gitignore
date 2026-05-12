@@ -1,5 +1,9 @@
 /target
-/dist
+# Ignore everything in /dist EXCEPT the Homebrew cask source. Note this
+# pattern lists contents of /dist rather than /dist itself, so the
+# negation below can re-include the homebrew/ subtree.
+/dist/*
+!/dist/homebrew/
 **/*.rs.bk
 .DS_Store
 
