@@ -1,0 +1,52 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  coverage:
+    name: llvm-cov + codecov
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: coverage
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      # Exclude AppKit/IOKit/NSXPC FFI-only modules from per-crate coverage.
+      # These call into macOS frameworks that aren't available (or meaningful)
+      # under unit-test conditions on CI: no display, no NSXPC peer, no IOKit.
+      # The realistic per-crate goal is honest reporting, not vanity numbers.
+      - name: cargo llvm-cov
+        run: |
+          cargo llvm-cov --workspace --lcov --output-path lcov.info \
+            --ignore-filename-regex 'crates/(app|helper)/src/(platform|menubar|helper_client|launch_at_login|main_thread|control_server)'
+
+      # CODECOV_TOKEN must be set in repo secrets:
+      #   Settings -> Secrets and variables -> Actions -> New repository secret
+      # Get the token from https://app.codecov.io/gh/diyanbogdanov/open-lid/settings
+      # (after creating the Codecov account / linking the repo).
+      - name: upload to codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
