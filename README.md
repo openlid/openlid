@@ -220,10 +220,10 @@ sleep. Verify Open-Lid is *on* (`open-lid status` should say "ON
 - [x] **v0.1 — Local MVP.** Menu bar app + CLI + preferences + helper.
 - [ ] **v0.2 — Signed distribution.** Notarized DMG, Homebrew tap,
   `SMAppService` daemon registration replacing the manual `sudo` install.
-- [ ] **v0.3 — Polish.** Schedule preference UI, optional state-change
-  notifications, configurable hotkey.
-- [ ] **v1.0 — Stable API.** Locked CLI surface + config schema, semver
-  guarantees.
+- [ ] **v1.0 — Stable API.** Locked CLI, `config.toml` schema, and IPC
+  surfaces under semver. Adds a `version` field to the config schema
+  as a forward-compatibility hook for future v2.x. See
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 - [ ] **v1.x — Cross-platform.** Linux (logind) and Windows
   (`SetThreadExecutionState`) implementations behind the existing
   `open-lid-core` traits.
