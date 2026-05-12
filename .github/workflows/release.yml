@@ -93,7 +93,7 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: publish draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # tag_name defaults to github.ref for tag pushes; for manual dispatch
           # we set it from the user-supplied ref.
