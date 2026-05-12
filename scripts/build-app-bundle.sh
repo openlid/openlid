@@ -38,6 +38,11 @@ if [ ! -f resources/app/AppIcon.icns ]; then
 fi
 cp resources/app/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+# Bundle a self-contained helper installer for end-users (Homebrew cask
+# users run this after `brew install --cask open-lid`). It points at the
+# helper binary at .app's MacOS dir rather than `target/debug/`.
+install -m 0755 resources/app/install-helper.sh "$APP/Contents/Resources/install-helper.sh"
+
 codesign --force --sign - --options runtime "$APP/Contents/MacOS/open-lid-helper"
 codesign --force --sign - --options runtime "$APP/Contents/MacOS/open-lid"
 codesign --force --sign - --deep --options runtime "$APP"
