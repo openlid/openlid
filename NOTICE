@@ -1,0 +1,38 @@
+Open-Lid
+Copyright 2026 Diyan Bogdanov
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+================================================================================
+THIRD-PARTY ATTRIBUTIONS
+================================================================================
+
+This product includes software developed by third parties listed below.
+
+Tabler Icons (MIT License)
+  https://github.com/tabler/tabler-icons
+  The menu bar icons and the app icon glyph are derived from Tabler's
+  `device-laptop` and `device-laptop-off` icons.
+
+upstream (MIT License)
+  https://github.com/narcotic-sh
+  Open-Lid's IOKit lid-monitoring approach (subscribing to
+  IOPMrootDomain's clamshell-state-change message) is ported from
+  the original upstream project by narcotic-sh.
+
+Inspired by keep-awake-style (Lighthead Software / Domzilla)
+  https://lightheadsw.com/keep-awake-style/
+  https://github.com/domzilla/keep-awake-style
+  Open-Lid's user-facing behavior — toggle to prevent sleep, optional
+  timed sessions, default duration preference — follows the established
+  design patterns of keep-awake-style.
