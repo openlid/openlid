@@ -7,6 +7,11 @@
 **/*.rs.bk
 .DS_Store
 
+# Dev environment / agent-tooling state — never to be committed.
+.claude/
+.cursor/
+.vscode/
+
 # Build artifacts
 *.app/
 *.dmg
