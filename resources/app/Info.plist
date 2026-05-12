@@ -23,6 +23,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>MIT licensed.</string>
+    <string>Copyright (c) 2026 Diyan Bogdanov. Licensed under Apache 2.0.</string>
 </dict>
 </plist>
