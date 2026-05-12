@@ -18,6 +18,13 @@ cp target/debug/open-lid-helper "$APP/Contents/MacOS/open-lid-helper"
 cp resources/app/Info.plist "$APP/Contents/Info.plist"
 cp resources/helper/io.openlid.helper.plist "$APP/Contents/Library/LaunchDaemons/io.openlid.helper.plist"
 
+# App icon. Generated on demand by scripts/generate-icon.sh if not present.
+if [ ! -f resources/app/AppIcon.icns ]; then
+    echo "App icon missing — generating it…"
+    ./scripts/generate-icon.sh
+fi
+cp resources/app/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
 codesign --force --sign - --options runtime "$APP/Contents/MacOS/open-lid-helper"
 codesign --force --sign - --options runtime "$APP/Contents/MacOS/open-lid"
 codesign --force --sign - --deep --options runtime "$APP"
