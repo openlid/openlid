@@ -59,8 +59,15 @@ pub struct Config {
     pub battery_threshold_pct: Option<u8>,
 }
 
+/// Default version assumed when a config on disk has no `version` field.
+///
+/// Always returns `1`, NOT `SCHEMA_VERSION`. A versionless config in the
+/// wild is by definition a pre-versioning (v1-era) config; it was written
+/// before the `version` field existed. Treating it as the current
+/// `SCHEMA_VERSION` would mis-tag old configs as future-schema ones the
+/// moment we bump `SCHEMA_VERSION` for a v2.
 fn default_schema_version() -> u32 {
-    SCHEMA_VERSION
+    1
 }
 
 impl Default for Config {
