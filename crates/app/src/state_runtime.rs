@@ -12,7 +12,9 @@ use open_lid_core::platform::{
 };
 use open_lid_core::state::{should_prevent_sleep, AppState};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration as StdDuration;
 
 /// Patch struct for updating preferences atomically. Each `Some(_)` replaces
 /// the corresponding field; `None` leaves it untouched.
@@ -47,6 +49,10 @@ where
     _power_source: Arc<S>,
     config_path: PathBuf,
     listeners: Mutex<Vec<StateListener>>,
+    /// Monotonic counter bumped every time the timer is re-armed. A scheduled
+    /// expiry thread captures the generation it was spawned for and refuses
+    /// to fire if a newer generation has been written. See `arm_timer`.
+    timer_generation: AtomicU64,
 }
 
 impl<P, L, S, D> StateRuntime<P, L, S, D>
@@ -91,6 +97,7 @@ where
             _power_source: power_source.clone(),
             config_path,
             listeners: Mutex::new(Vec::new()),
+            timer_generation: AtomicU64::new(0),
         });
 
         let rt_for_lid = Arc::clone(&rt);
@@ -128,19 +135,56 @@ where
         enabled: bool,
         until: Option<DateTime<Local>>,
     ) -> Result<()> {
+        let effective_until = if enabled { until } else { None };
         {
             let mut s = self.state.lock().unwrap();
             s.enabled = enabled;
-            s.until = if enabled { until } else { None };
+            s.until = effective_until;
         }
+        // Re-arm the expiry scheduler. Any previously-scheduled thread becomes
+        // a no-op once the generation counter ticks past its captured value.
+        self.arm_timer(effective_until);
         self.persist_and_reconcile()
+    }
+
+    /// Spawn a one-shot thread that wakes at `until` and forces a reconcile.
+    /// Cheap: when no timer is set, this just bumps the generation counter
+    /// (which invalidates any in-flight sleeper).
+    fn arm_timer(self: &Arc<Self>, until: Option<DateTime<Local>>) {
+        let gen = self.timer_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let Some(until) = until else {
+            return;
+        };
+        let sleep_for = (until - Local::now()).to_std().unwrap_or(StdDuration::ZERO);
+        let rt = Arc::clone(self);
+        std::thread::spawn(move || {
+            std::thread::sleep(sleep_for);
+            // Stale-check: if a newer arm() has been called, do nothing.
+            if rt.timer_generation.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            tracing::info!("timer expired (gen {gen}); forcing reconcile");
+            // The reconcile path already clears `enabled` and `until` when it
+            // detects the expiry, then calls allow_sleep on the power
+            // controller. We just need to trigger it.
+            rt.reconcile();
+            rt.notify_listeners();
+        });
     }
 
     /// Apply a preferences patch — atomic per-field update.
     pub fn set_preferences(self: &Arc<Self>, patch: PrefsPatch) -> Result<()> {
+        // Capture the side-effect we may need to perform AFTER releasing the
+        // config lock. We don't want to hold the lock across SMAppService FFI
+        // calls (they can block briefly waiting for the launchd database).
+        let mut start_at_login_change: Option<bool> = None;
+
         {
             let mut cfg = self.config.lock().unwrap();
             if let Some(v) = patch.start_at_login {
+                if cfg.start_at_login != v {
+                    start_at_login_change = Some(v);
+                }
                 cfg.start_at_login = v;
             }
             if let Some(v) = patch.activate_at_launch {
@@ -151,12 +195,32 @@ where
             }
             if let Some(v) = patch.battery_threshold_pct {
                 cfg.battery_threshold_pct = v;
-                // Decision 2: also propagate to the legacy `min_battery`
-                // modifier so the runtime decision function honors it.
+                // Propagate to the modifier the decision function reads.
                 self.state.lock().unwrap().modifiers.min_battery = v;
             }
         }
-        self.persist_and_reconcile()
+
+        // Persist the new config + reconcile the helper *first*, so even if
+        // the SMAppService call below fails, the user's preference is saved.
+        self.persist_and_reconcile()?;
+
+        if let Some(enable) = start_at_login_change {
+            let result = if enable {
+                crate::launch_at_login::enable()
+            } else {
+                crate::launch_at_login::disable()
+            };
+            if let Err(e) = result {
+                // Log but don't fail the whole set_preferences — the UI
+                // already shows the preference as flipped, and the user can
+                // re-try after fixing the underlying issue (e.g., move app
+                // into /Applications). Returning an error here would roll
+                // back the UI checkbox, which is a confusing UX.
+                tracing::warn!("launch-at-login change failed: {e:#}");
+            }
+        }
+
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Snapshot {
