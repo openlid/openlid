@@ -1,7 +1,7 @@
 //! Unix domain socket server. Accepts one request per connection, replies, closes.
 //! Path: ~/Library/Application Support/open-lid/control.sock.
 
-use crate::state_runtime::StateRuntime;
+use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
 use interprocess::local_socket::{
     GenericFilePath, ListenerOptions, Stream, ToFsName,
@@ -86,22 +86,21 @@ where
     let result: Result<()> = match req {
         ControlRequest::Ping => return ControlResponse::Pong,
         ControlRequest::GetStatus => Ok(()),
-        ControlRequest::SetEnabled { enabled } => rt.set_enabled(enabled),
-        ControlRequest::SetMode { mode } => rt.set_mode(mode),
-        ControlRequest::SetModifierOnlyOnAc { enabled } => {
-            let mut m = rt.state.lock().unwrap().modifiers.clone();
-            m.only_on_ac = enabled;
-            rt.set_modifiers(m)
-        }
-        ControlRequest::SetModifierMinBattery { percent } => {
-            let mut m = rt.state.lock().unwrap().modifiers.clone();
-            m.min_battery = percent;
-            rt.set_modifiers(m)
-        }
-        ControlRequest::SetModifierSchedule { enabled: _ } => Ok(()),
+        ControlRequest::SetEnabled { enabled, until } => rt.set_enabled(enabled, until),
+        ControlRequest::SetPreferences {
+            start_at_login,
+            activate_at_launch,
+            default_duration_minutes,
+            battery_threshold_pct,
+        } => rt.set_preferences(PrefsPatch {
+            start_at_login,
+            activate_at_launch,
+            default_duration_minutes,
+            battery_threshold_pct,
+        }),
         ControlRequest::Uninstall => {
             tracing::info!("uninstall requested via control socket");
-            rt.set_enabled(false)
+            rt.set_enabled(false, None)
         }
     };
     match result {

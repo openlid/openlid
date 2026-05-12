@@ -3,16 +3,26 @@
 //! PowerController to reconcile the helper with the desired state.
 
 use anyhow::Result;
-use chrono::Local;
+use chrono::{DateTime, Local};
 use open_lid_core::config::Config;
 use open_lid_core::ipc::control::Snapshot;
-use open_lid_core::mode::{LidState, Mode, Modifiers, PowerSource};
+use open_lid_core::mode::{LidState, PowerSource};
 use open_lid_core::platform::{
     DisplayController, LidObserver, PowerController, PowerSourceMonitor,
 };
 use open_lid_core::state::{should_prevent_sleep, AppState};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+/// Patch struct for updating preferences atomically. Each `Some(_)` replaces
+/// the corresponding field; `None` leaves it untouched.
+#[derive(Debug, Default, Clone)]
+pub struct PrefsPatch {
+    pub start_at_login: Option<bool>,
+    pub activate_at_launch: Option<bool>,
+    pub default_duration_minutes: Option<Option<u32>>,
+    pub battery_threshold_pct: Option<Option<u8>>,
+}
 
 /// Notification fired whenever any state-affecting field changes. Listeners
 /// run on whichever thread triggered the change (menu click = main thread,
@@ -30,6 +40,7 @@ where
 {
     pub state: Arc<Mutex<AppState>>,
     last_applied: Arc<Mutex<bool>>,
+    config: Mutex<Config>,
     power: Arc<P>,
     display: Arc<D>,
     _lid: Arc<L>,
@@ -54,10 +65,18 @@ where
     ) -> Result<Arc<Self>> {
         let cfg = Config::load(&config_path)?;
 
+        // Decision 1: "Restore last state" by default. If `activate_at_launch`
+        // is set, override with `enabled = true` regardless of persisted state.
+        let enabled = if cfg.activate_at_launch {
+            true
+        } else {
+            cfg.enabled
+        };
+
         let state = AppState {
-            enabled: cfg.enabled,
-            mode: cfg.mode,
-            modifiers: cfg.modifiers,
+            enabled,
+            modifiers: cfg.modifiers.clone(),
+            until: None, // timers are transient — never persisted
             lid: lid.current(),
             power: power_source.current(),
         };
@@ -65,6 +84,7 @@ where
         let rt = Arc::new(Self {
             state: Arc::new(Mutex::new(state)),
             last_applied: Arc::new(Mutex::new(false)),
+            config: Mutex::new(cfg),
             power,
             display,
             _lid: lid.clone(),
@@ -86,49 +106,74 @@ where
         Ok(rt)
     }
 
-    /// Subscribe to state changes. Listener is called after every successful
-    /// `set_enabled`/`set_mode`/`set_modifiers` and after every lid/power event
-    /// reconciliation. UI listeners must dispatch back to the main thread
-    /// before touching AppKit — see `crate::main_thread::run_on_main`.
+    /// Subscribe to state changes. UI listeners must dispatch back to the
+    /// main thread before touching AppKit — see `crate::main_thread::run_on_main`.
     pub fn add_listener(&self, listener: StateListener) {
         self.listeners.lock().unwrap().push(listener);
     }
 
     fn notify_listeners(&self) {
         let snap = self.snapshot();
-        // Clone the Arc list and drop the lock before invoking any listener,
-        // so a re-entrant `add_listener` during a callback can't deadlock.
         let listeners: Vec<StateListener> = self.listeners.lock().unwrap().clone();
         for l in &listeners {
             l(&snap);
         }
     }
 
-    pub fn set_enabled(self: &Arc<Self>, enabled: bool) -> Result<()> {
-        self.state.lock().unwrap().enabled = enabled;
+    /// Set the toggle plus an optional auto-expiry instant.
+    /// `until = None` means indefinite (no timer); `Some(t)` deactivates at `t`.
+    /// Disabling clears any pending timer.
+    pub fn set_enabled(
+        self: &Arc<Self>,
+        enabled: bool,
+        until: Option<DateTime<Local>>,
+    ) -> Result<()> {
+        {
+            let mut s = self.state.lock().unwrap();
+            s.enabled = enabled;
+            s.until = if enabled { until } else { None };
+        }
         self.persist_and_reconcile()
     }
 
-    pub fn set_mode(self: &Arc<Self>, mode: Mode) -> Result<()> {
-        self.state.lock().unwrap().mode = mode;
+    /// Apply a preferences patch — atomic per-field update.
+    pub fn set_preferences(self: &Arc<Self>, patch: PrefsPatch) -> Result<()> {
+        {
+            let mut cfg = self.config.lock().unwrap();
+            if let Some(v) = patch.start_at_login {
+                cfg.start_at_login = v;
+            }
+            if let Some(v) = patch.activate_at_launch {
+                cfg.activate_at_launch = v;
+            }
+            if let Some(v) = patch.default_duration_minutes {
+                cfg.default_duration_minutes = v;
+            }
+            if let Some(v) = patch.battery_threshold_pct {
+                cfg.battery_threshold_pct = v;
+                // Decision 2: also propagate to the legacy `min_battery`
+                // modifier so the runtime decision function honors it.
+                self.state.lock().unwrap().modifiers.min_battery = v;
+            }
+        }
         self.persist_and_reconcile()
     }
 
-    pub fn set_modifiers(self: &Arc<Self>, modifiers: Modifiers) -> Result<()> {
-        self.state.lock().unwrap().modifiers = modifiers;
-        self.persist_and_reconcile()
-    }
-
-    pub fn snapshot(&self) -> open_lid_core::ipc::control::Snapshot {
+    pub fn snapshot(&self) -> Snapshot {
         let s = self.state.lock().unwrap();
-        open_lid_core::ipc::control::Snapshot {
+        let cfg = self.config.lock().unwrap();
+        Snapshot {
             preventing_sleep_now: should_prevent_sleep(&s, Local::now()),
             enabled: s.enabled,
-            mode: s.mode.clone(),
+            until: s.until,
             modifiers: s.modifiers.clone(),
             lid: s.lid,
             power: s.power,
             helper: open_lid_core::ipc::control::HelperStatus::Running,
+            start_at_login: cfg.start_at_login,
+            activate_at_launch: cfg.activate_at_launch,
+            default_duration_minutes: cfg.default_duration_minutes,
+            battery_threshold_pct: cfg.battery_threshold_pct,
         }
     }
 
@@ -140,7 +185,10 @@ where
             was_open && new_lid == LidState::Closed
         };
         self.reconcile();
-        if was_closing && !self.display.has_external_display() {
+        // Original Open-Lid value-prop: if we're keeping the system awake and
+        // the user just closed the lid, force the display off to save battery
+        // and reduce heat. Skipped if an external display is attached.
+        if was_closing && self.snapshot().preventing_sleep_now && !self.display.has_external_display() {
             let _ = self.display.force_display_sleep();
         }
         self.notify_listeners();
@@ -148,26 +196,66 @@ where
 
     fn on_power_change(self: &Arc<Self>, new_ps: PowerSource) {
         self.state.lock().unwrap().power = new_ps;
+        // Battery threshold: if we drop below the configured threshold AND we
+        // are currently enabled, auto-deactivate. Per Decision 2, we do NOT
+        // auto-reactivate when battery recovers — the user must manually
+        // toggle back on.
+        let should_auto_deactivate = {
+            let cfg = self.config.lock().unwrap();
+            let s = self.state.lock().unwrap();
+            matches!(
+                (cfg.battery_threshold_pct, new_ps, s.enabled),
+                (Some(threshold), PowerSource::Battery { percent }, true) if percent < threshold
+            )
+        };
+        if should_auto_deactivate {
+            tracing::info!(
+                "battery threshold reached; auto-deactivating sleep prevention"
+            );
+            let mut s = self.state.lock().unwrap();
+            s.enabled = false;
+            s.until = None;
+            drop(s);
+            // Best-effort persist; ignore errors so a transient disk issue
+            // doesn't prevent the safety deactivation from happening.
+            let _ = self.persist_and_reconcile_inner();
+        }
         self.reconcile();
         self.notify_listeners();
     }
 
     fn persist_and_reconcile(&self) -> Result<()> {
-        let cfg = {
+        self.persist_and_reconcile_inner()
+    }
+
+    fn persist_and_reconcile_inner(&self) -> Result<()> {
+        let cfg_to_save = {
+            let mut cfg = self.config.lock().unwrap();
             let s = self.state.lock().unwrap();
-            Config {
-                enabled: s.enabled,
-                mode: s.mode.clone(),
-                modifiers: s.modifiers.clone(),
-            }
+            // Sync state fields that should persist
+            cfg.enabled = s.enabled;
+            cfg.modifiers = s.modifiers.clone();
+            cfg.clone()
         };
-        cfg.save(&self.config_path)?;
+        cfg_to_save.save(&self.config_path)?;
         self.reconcile();
         self.notify_listeners();
         Ok(())
     }
 
     fn reconcile(&self) {
+        // Check for expired timer first
+        let timer_expired = {
+            let s = self.state.lock().unwrap();
+            matches!(s.until, Some(t) if Local::now() >= t)
+        };
+        if timer_expired {
+            tracing::info!("timer expired; auto-deactivating");
+            let mut s = self.state.lock().unwrap();
+            s.enabled = false;
+            s.until = None;
+        }
+
         let desired = {
             let s = self.state.lock().unwrap();
             should_prevent_sleep(&s, Local::now())
@@ -221,11 +309,16 @@ mod tests {
     }
     impl MockLid {
         fn new(s: LidState) -> Self {
-            Self { state: Mutex::new(s), cb: Mutex::new(None) }
+            Self {
+                state: Mutex::new(s),
+                cb: Mutex::new(None),
+            }
         }
     }
     impl LidObserver for MockLid {
-        fn current(&self) -> LidState { *self.state.lock().unwrap() }
+        fn current(&self) -> LidState {
+            *self.state.lock().unwrap()
+        }
         fn subscribe(&self, cb: open_lid_core::platform::LidStateCallback) {
             *self.cb.lock().unwrap() = Some(cb);
         }
@@ -234,16 +327,23 @@ mod tests {
     #[derive(Default)]
     struct MockPs(Mutex<Option<open_lid_core::platform::PowerSourceCallback>>);
     impl PowerSourceMonitor for MockPs {
-        fn current(&self) -> PowerSource { PowerSource::Ac }
+        fn current(&self) -> PowerSource {
+            PowerSource::Ac
+        }
         fn subscribe(&self, cb: open_lid_core::platform::PowerSourceCallback) {
             *self.0.lock().unwrap() = Some(cb);
         }
     }
 
     #[derive(Default)]
-    struct MockDisplay { external: AtomicBool, sleep_calls: AtomicU32 }
+    struct MockDisplay {
+        external: AtomicBool,
+        sleep_calls: AtomicU32,
+    }
     impl DisplayController for MockDisplay {
-        fn has_external_display(&self) -> bool { self.external.load(Ordering::SeqCst) }
+        fn has_external_display(&self) -> bool {
+            self.external.load(Ordering::SeqCst)
+        }
         fn force_display_sleep(&self) -> Result<(), PlatformError> {
             self.sleep_calls.fetch_add(1, Ordering::SeqCst);
             Ok(())
@@ -251,23 +351,8 @@ mod tests {
     }
 
     #[test]
-    fn enabling_with_lid_closed_calls_prevent_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = dir.path().join("config.toml");
-        let power = Arc::new(MockPower::default());
-        let lid = Arc::new(MockLid::new(LidState::Closed));
-        let ps = Arc::new(MockPs::default());
-        let disp = Arc::new(MockDisplay::default());
-        let rt = StateRuntime::new(power.clone(), lid, ps, disp, cfg).unwrap();
-        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 0);
-        rt.set_enabled(true).unwrap();
-        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
-        rt.set_enabled(true).unwrap();
-        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn lid_open_with_lid_closed_mode_does_not_prevent() {
+    fn enabling_calls_prevent_once_regardless_of_lid() {
+        // Post-mode-removal: enable always means prevent sleep, lid-agnostic.
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
         let power = Arc::new(MockPower::default());
@@ -275,7 +360,27 @@ mod tests {
         let ps = Arc::new(MockPs::default());
         let disp = Arc::new(MockDisplay::default());
         let rt = StateRuntime::new(power.clone(), lid, ps, disp, cfg).unwrap();
-        rt.set_enabled(true).unwrap();
         assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 0);
+        rt.set_enabled(true, None).unwrap();
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
+        // Idempotent: re-enabling doesn't re-call
+        rt.set_enabled(true, None).unwrap();
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn disabling_clears_pending_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let power = Arc::new(MockPower::default());
+        let lid = Arc::new(MockLid::new(LidState::Closed));
+        let ps = Arc::new(MockPs::default());
+        let disp = Arc::new(MockDisplay::default());
+        let rt = StateRuntime::new(power, lid, ps, disp, cfg).unwrap();
+        rt.set_enabled(true, Some(Local::now() + chrono::Duration::hours(1)))
+            .unwrap();
+        assert!(rt.snapshot().until.is_some());
+        rt.set_enabled(false, None).unwrap();
+        assert!(rt.snapshot().until.is_none());
     }
 }
