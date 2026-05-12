@@ -1,0 +1,29 @@
+[package]
+name = "open-lid-helper"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "open-lid-helper"
+path = "src/main.rs"
+
+[dependencies]
+open-lid-core = { workspace = true }
+open-lid-helper-protocol = { path = "../helper-protocol" }
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+block2 = { workspace = true }
+core-foundation = { workspace = true }
+security-framework = { workspace = true }
+security-framework-sys = "2"
+core-foundation-sys = "0.8"
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
