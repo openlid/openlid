@@ -1,0 +1,87 @@
+name: Bug Report
+description: Something doesn't work the way it should.
+title: "[bug] "
+labels: ["bug", "triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill out the fields below — the
+        more detail the better. If you're unsure about a field, write
+        "unsure" rather than leaving it blank.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug. What did you expect, what actually happened?
+      placeholder: |
+        I clicked the menu bar icon expecting to toggle sleep prevention.
+        Instead, the menu appeared.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list. Include the exact CLI commands or click sequences.
+      placeholder: |
+        1. Run `./scripts/install.sh`
+        2. Run `open -a OpenLid`
+        3. Click the menu bar icon
+        4. Observe the menu appearing instead of toggling
+    validations:
+      required: true
+
+  - type: input
+    id: openlid-version
+    attributes:
+      label: Open-Lid version
+      description: Output of `open-lid --version`
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      description: Output of `sw_vers -productVersion`
+      placeholder: "14.5"
+    validations:
+      required: true
+
+  - type: input
+    id: architecture
+    attributes:
+      label: Architecture
+      description: Output of `uname -m`
+      placeholder: "arm64"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: |
+        Tail of `~/Library/Application Support/Logs/open-lid/app.log.<date>`
+        and (if the helper is involved) `/Library/Logs/open-lid/helper.log.<date>`.
+        Trim to the last 30-50 lines around the failure.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched [existing issues](https://github.com/diyanbogdanov/open-lid/issues?q=is%3Aissue) for duplicates.
+          required: true
+        - label: I'm running the latest released version (or HEAD).
+          required: true
+        - label: This isn't a security vulnerability (those go to SECURITY.md, not here).
+          required: true
