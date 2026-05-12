@@ -98,7 +98,9 @@ fn setup_logging() -> Result<()> {
     std::fs::create_dir_all(log_dir).ok();
     let file = tracing_appender::rolling::daily(log_dir, "helper.log");
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_env("OPEN_LID_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_env("OPEN_LID_LOG").unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(file)
         .with_ansi(false)
         .init();

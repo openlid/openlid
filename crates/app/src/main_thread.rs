@@ -40,7 +40,6 @@ pub fn run_on_main<F: FnOnce() + Send + 'static>(f: F) {
 }
 
 unsafe extern "C" fn trampoline(context: *mut c_void) {
-    let outer: Box<Box<dyn FnOnce() + Send>> =
-        unsafe { Box::from_raw(context as *mut _) };
+    let outer: Box<Box<dyn FnOnce() + Send>> = unsafe { Box::from_raw(context as *mut _) };
     (*outer)();
 }

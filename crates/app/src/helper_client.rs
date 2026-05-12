@@ -160,9 +160,8 @@ impl HelperClient {
         // is insufficient for NSXPC.
         // SAFETY: `open_lid_helper_protocol::protocol()` returns a static
         // pointer to the Clang-emitted `OpenLidHelperProtocol` metadata.
-        let interface = unsafe {
-            NSXPCInterface::interfaceWithProtocol(open_lid_helper_protocol::protocol())
-        };
+        let interface =
+            unsafe { NSXPCInterface::interfaceWithProtocol(open_lid_helper_protocol::protocol()) };
         conn.setRemoteObjectInterface(Some(&interface));
 
         // Lifecycle handlers. These are NOT reply blocks, so NSXPC does not
@@ -217,8 +216,8 @@ impl HelperClient {
         // Reply block — fires on success path. Must use `with_encoding` so
         // NSXPC accepts it; see ReplyOkErr above.
         let reply_slot = Arc::clone(&slot);
-        let reply_block = RcBlock::with_encoding::<_, _, _, ReplyOkErr>(
-            move |ok: Bool, err: *mut NSString| {
+        let reply_block =
+            RcBlock::with_encoding::<_, _, _, ReplyOkErr>(move |ok: Bool, err: *mut NSString| {
                 if ok.as_bool() {
                     fill_slot(&reply_slot, Ok(()));
                 } else {
@@ -232,8 +231,7 @@ impl HelperClient {
                     };
                     fill_slot(&reply_slot, Err(PlatformError::Native(msg)));
                 }
-            },
-        );
+            });
 
         // `remoteObjectProxyWithErrorHandler:` returns a single-use proxy
         // bound to the error handler. The error handler block must outlive
@@ -407,4 +405,3 @@ impl PowerController for HelperPowerController {
         self.client.set_sleep_prevention(false)
     }
 }
-

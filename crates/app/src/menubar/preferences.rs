@@ -466,4 +466,3 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
         }
     }
 }
-

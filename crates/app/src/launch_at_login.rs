@@ -52,8 +52,7 @@ fn call_register_or_unregister(register: bool) -> Result<()> {
     // SMAppService instance.
     let service: Retained<AnyObject> = unsafe {
         let raw: *mut AnyObject = msg_send![cls, mainApp];
-        Retained::from_raw(raw)
-            .ok_or_else(|| anyhow!("SMAppService.mainApp returned nil"))?
+        Retained::from_raw(raw).ok_or_else(|| anyhow!("SMAppService.mainApp returned nil"))?
     };
 
     let mut err_ptr: *mut NSError = std::ptr::null_mut();

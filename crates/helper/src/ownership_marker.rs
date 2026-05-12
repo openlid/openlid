@@ -3,9 +3,9 @@
 //! within a grace period, we restore normal sleep behavior.
 
 use anyhow::Result;
-use std::path::PathBuf;
 #[cfg(test)]
 use std::path::Path;
+use std::path::PathBuf;
 
 const MARKER_PATH: &str = "/Library/Application Support/open-lid/sleep-prevention.enabled";
 
@@ -22,7 +22,9 @@ impl OwnershipMarker {
 
     #[cfg(test)]
     pub fn at(p: &Path) -> Self {
-        Self { path: p.to_path_buf() }
+        Self {
+            path: p.to_path_buf(),
+        }
     }
 
     pub fn exists(&self) -> bool {

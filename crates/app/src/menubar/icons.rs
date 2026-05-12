@@ -83,11 +83,7 @@ fn draw_laptop(path: &NSBezierPath) {
         NSPoint::new(5.0 * SCALE, 6.0 * SCALE),
         NSSize::new(14.0 * SCALE, 10.0 * SCALE),
     );
-    path.appendBezierPathWithRoundedRect_xRadius_yRadius(
-        body,
-        1.0 * SCALE,
-        1.0 * SCALE,
-    );
+    path.appendBezierPathWithRoundedRect_xRadius_yRadius(body, 1.0 * SCALE, 1.0 * SCALE);
 }
 
 /// `device-laptop-off` — same laptop but with two strategic gaps where a

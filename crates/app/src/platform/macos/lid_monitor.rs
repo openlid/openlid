@@ -4,7 +4,7 @@
 use super::iokit_ffi::*;
 use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
-use core_foundation::runloop::{CFRunLoopAddSource, CFRunLoopGetMain, kCFRunLoopCommonModes};
+use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetMain};
 use core_foundation::string::CFString;
 use open_lid_core::mode::LidState;
 use open_lid_core::platform::{LidObserver, LidStateCallback};
@@ -32,16 +32,14 @@ impl MacLidMonitor {
         }
         let port = unsafe { IONotificationPortCreate(kIOMainPortDefault) };
         if port.is_null() {
-            unsafe { IOObjectRelease(root_domain); }
+            unsafe {
+                IOObjectRelease(root_domain);
+            }
             anyhow::bail!("IONotificationPortCreate returned null");
         }
         let source = unsafe { IONotificationPortGetRunLoopSource(port) };
         unsafe {
-            CFRunLoopAddSource(
-                CFRunLoopGetMain(),
-                source as *mut _,
-                kCFRunLoopCommonModes,
-            );
+            CFRunLoopAddSource(CFRunLoopGetMain(), source as *mut _, kCFRunLoopCommonModes);
         }
 
         let inner = Arc::new(Mutex::new(Inner {
@@ -85,12 +83,18 @@ impl MacLidMonitor {
                 0,
             )
         };
-        unsafe { IOObjectRelease(root_domain); }
+        unsafe {
+            IOObjectRelease(root_domain);
+        }
         if cf_ptr.is_null() {
             return LidState::Open;
         }
         let cf = unsafe { CFBoolean::wrap_under_create_rule(cf_ptr as *const _) };
-        if cf.into() { LidState::Closed } else { LidState::Open }
+        if cf.into() {
+            LidState::Closed
+        } else {
+            LidState::Open
+        }
     }
 
     unsafe extern "C" fn on_message(
@@ -107,7 +111,11 @@ impl MacLidMonitor {
         }
         let bits = message_argument as usize;
         let closed = (bits & K_CLAMSHELL_STATE_BIT) != 0;
-        let state = if closed { LidState::Closed } else { LidState::Open };
+        let state = if closed {
+            LidState::Closed
+        } else {
+            LidState::Open
+        };
 
         let inner = unsafe { Arc::from_raw(refcon as *const Mutex<Inner>) };
         let cb = inner.lock().unwrap().callback.clone();
@@ -122,15 +130,21 @@ impl Drop for MacLidMonitor {
     fn drop(&mut self) {
         let mut inner = self.inner.lock().unwrap();
         if inner.notifier != IO_OBJECT_NULL {
-            unsafe { IOObjectRelease(inner.notifier); }
+            unsafe {
+                IOObjectRelease(inner.notifier);
+            }
             inner.notifier = IO_OBJECT_NULL;
         }
         if !inner.notification_port.is_null() {
-            unsafe { IONotificationPortDestroy(inner.notification_port); }
+            unsafe {
+                IONotificationPortDestroy(inner.notification_port);
+            }
             inner.notification_port = std::ptr::null_mut();
         }
         if inner.root_domain != IO_OBJECT_NULL {
-            unsafe { IOObjectRelease(inner.root_domain); }
+            unsafe {
+                IOObjectRelease(inner.root_domain);
+            }
             inner.root_domain = IO_OBJECT_NULL;
         }
     }
@@ -148,7 +162,9 @@ impl LidObserver for MacLidMonitor {
 
 unsafe fn find_root_domain() -> io_service_t {
     let name = CString::new("IOPMrootDomain").unwrap();
-    let matched = unsafe { IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(name.as_ptr())) };
+    let matched = unsafe {
+        IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(name.as_ptr()))
+    };
     if matched != IO_OBJECT_NULL {
         return matched;
     }
