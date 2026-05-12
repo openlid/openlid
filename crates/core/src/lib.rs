@@ -11,5 +11,5 @@ pub mod platform;
 pub mod state;
 
 pub use config::Config;
-pub use mode::{Mode, Modifiers, Schedule, DaysOfWeek, LidState, PowerSource};
-pub use state::{AppState, should_prevent_sleep};
+pub use mode::{DaysOfWeek, LidState, Modifiers, PowerSource, Schedule};
+pub use state::{should_prevent_sleep, AppState};

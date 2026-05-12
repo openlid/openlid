@@ -4,38 +4,51 @@
 //! selectors dispatch through that trait. This keeps the AppKit-facing
 //! glue free of the `StateRuntime`'s many generic parameters.
 //!
-//! The menu structure (MVP):
+//! Menu structure (post-mode-removal):
 //!
 //! ```text
-//! Status: Preventing sleep · Mode: Lid-closed       [disabled item]
+//! Status: Preventing sleep · Lid open · AC       [disabled item]
 //! ─────────
-//! Turn Off    (or "Turn On")           [action: toggle]
+//! Turn Off    (or "Turn On")                    [action: toggle]
 //! ─────────
-//! Mode ▸
-//!   ✓ Lid-closed                       [action: set mode lid-closed]
-//!     Always awake                     [action: set mode always-awake]
+//! Activate for ▸
+//!   Indefinitely                                [tag=0]
+//!   5 minutes                                   [tag=5]
+//!   10 minutes
+//!   15 minutes
+//!   30 minutes
+//!   1 hour                                      [tag=60]
+//!   2 hours                                     [tag=120]
+//!   5 hours                                     [tag=300]
 //! ─────────
-//! Quit Open-Lid    ⌘Q                  [action: quit]
+//! Preferences…    ⌘,                            [action: open_preferences]
+//! ─────────
+//! Quit Open-Lid    ⌘Q                           [action: quit]
 //! ```
 //!
-//! Each refresh re-titles the toggle item and updates the checkmark on the
-//! mode submenu items to reflect the current snapshot.
+//! All "Activate for" entries share a single selector that reads the menu
+//! item's `tag` (in minutes; 0 = indefinite) and dispatches through
+//! `MenuActions::activate_for_minutes`.
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
-use objc2_app_kit::{NSControlStateValueOff, NSControlStateValueOn, NSMenu, NSMenuItem};
+use objc2_app_kit::{NSMenu, NSMenuItem};
 use objc2_foundation::{ns_string, MainThreadMarker, NSObject, NSObjectProtocol, NSString};
 use open_lid_core::ipc::control::Snapshot;
-use open_lid_core::mode::{LidState, Mode, PowerSource};
+use open_lid_core::mode::{LidState, PowerSource};
 use std::cell::OnceCell;
 use std::sync::Arc;
 
 /// Operations the menu can invoke. Implemented over the (generic) StateRuntime
 /// by the outer module so AppKit code only ever sees this trait.
 pub trait MenuActions: Send + Sync {
+    /// Single-click / "Turn On" / "Turn Off". Uses default duration from prefs.
     fn toggle(&self);
-    fn set_mode_lid_closed(&self);
-    fn set_mode_always_awake(&self);
+    /// Explicit "Activate for N minutes" from the submenu. `None` = indefinite.
+    fn activate_for_minutes(&self, minutes: Option<u32>);
+    /// "Preferences…" — opens the prefs window.
+    fn open_preferences(&self);
+    /// "Quit Open-Lid".
     fn quit(&self);
 }
 
@@ -57,10 +70,6 @@ define_class!(
     // SAFETY: `NSObjectProtocol` has no safety requirements.
     unsafe impl NSObjectProtocol for MenuHandler {}
 
-    /// Action selectors invoked by NSMenu when items are clicked. NSMenu calls
-    /// each as `-[handler selector:sender]`, where `sender` is the NSMenuItem.
-    /// We ignore the sender; the handler's `actions` ivar carries everything
-    /// we need.
     impl MenuHandler {
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(toggle:))]
@@ -71,18 +80,25 @@ define_class!(
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
-        #[unsafe(method(setModeLidClosed:))]
-        fn set_mode_lid_closed(&self, _sender: Option<&AnyObject>) {
+        #[unsafe(method(activateFor:))]
+        fn activate_for(&self, sender: Option<&AnyObject>) {
+            // Read the NSMenuItem's `tag` to find which duration was selected.
+            // tag = 0 → indefinite, otherwise tag = minutes.
+            let tag: isize = match sender {
+                Some(s) => unsafe { msg_send![s, tag] },
+                None => 0,
+            };
+            let minutes = if tag <= 0 { None } else { Some(tag as u32) };
             if let Some(actions) = self.ivars().actions.get() {
-                actions.set_mode_lid_closed();
+                actions.activate_for_minutes(minutes);
             }
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
-        #[unsafe(method(setModeAlwaysAwake:))]
-        fn set_mode_always_awake(&self, _sender: Option<&AnyObject>) {
+        #[unsafe(method(openPreferences:))]
+        fn open_preferences(&self, _sender: Option<&AnyObject>) {
             if let Some(actions) = self.ivars().actions.get() {
-                actions.set_mode_always_awake();
+                actions.open_preferences();
             }
         }
 
@@ -97,46 +113,35 @@ define_class!(
 );
 
 impl MenuHandler {
-    /// Construct a new handler. The `actions` are installed once; cloning the
-    /// `Retained<MenuHandler>` does not duplicate the ivars.
     pub fn new(mtm: MainThreadMarker, actions: Arc<dyn MenuActions>) -> Retained<Self> {
         let ivars = MenuHandlerIvars::default();
         let _ = ivars.actions.set(actions);
         let this = Self::alloc(mtm).set_ivars(ivars);
-        // SAFETY: NSObject's `init` is safe to call; this is the standard
-        // post-`alloc` initializer.
+        // SAFETY: NSObject's `init` is safe to call.
         unsafe { msg_send![super(this), init] }
     }
 }
 
-// SAFETY: NSObjects are `Send`/`Sync` in the sense relevant here: the
-// `Retained<MenuHandler>` may be moved between threads, but AppKit will only
-// invoke selectors on the main thread (the menu and status item are both
-// main-thread-only objects). The ivar `OnceCell<Arc<dyn MenuActions>>` only
-// stores a `Send + Sync` value behind an `Arc`. We do not implement these
-// here; default object behavior is sufficient because the menu handler only
-// crosses thread boundaries via `Retained` clones, not by raw value moves.
-
-// ---------------------------------------------------------------------------
-// References to menu items we want to mutate on refresh.
-//
-// We hold direct `Retained<NSMenuItem>` for the toggle row and each mode row
-// so refresh can update titles / checkmarks without re-walking the menu.
+/// The "Activate for" submenu entries. (label, minutes; minutes=0 → indefinite)
+const ACTIVATE_FOR_ENTRIES: &[(&str, isize)] = &[
+    ("Indefinitely", 0),
+    ("5 minutes", 5),
+    ("10 minutes", 10),
+    ("15 minutes", 15),
+    ("30 minutes", 30),
+    ("1 hour", 60),
+    ("2 hours", 120),
+    ("5 hours", 300),
+];
 
 pub struct BuiltMenu {
     pub menu: Retained<NSMenu>,
     pub status_item: Retained<NSMenuItem>,
     pub toggle_item: Retained<NSMenuItem>,
-    pub mode_lid_closed: Retained<NSMenuItem>,
-    pub mode_always_awake: Retained<NSMenuItem>,
 }
 
-/// Build the MVP menu with all items targeted at `handler`. Returns the menu
-/// plus the handles we need to mutate on snapshot refresh.
 pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
     let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!(""));
-    // Items are enabled/disabled explicitly; the "Status: …" header item must
-    // stay greyed out even though it has no target.
     menu.setAutoenablesItems(false);
 
     let handler_obj: &AnyObject = handler.as_ref();
@@ -148,27 +153,39 @@ pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // 2. Toggle (Turn On / Turn Off).
+    // 2. Toggle.
     let toggle_item = make_item(mtm, "Turn On", Some(sel!(toggle:)), handler_obj);
     menu.addItem(&toggle_item);
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // 3. Mode submenu.
-    let mode_item = make_item(mtm, "Mode", None, handler_obj);
-    let mode_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Mode"));
-    mode_menu.setAutoenablesItems(false);
-    let mode_lid_closed = make_item(mtm, "Lid-closed", Some(sel!(setModeLidClosed:)), handler_obj);
-    let mode_always_awake =
-        make_item(mtm, "Always awake", Some(sel!(setModeAlwaysAwake:)), handler_obj);
-    mode_menu.addItem(&mode_lid_closed);
-    mode_menu.addItem(&mode_always_awake);
-    mode_item.setSubmenu(Some(&mode_menu));
-    menu.addItem(&mode_item);
+    // 3. "Activate for" submenu.
+    let activate_for_item = make_item(mtm, "Activate for", None, handler_obj);
+    let submenu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Activate for"));
+    submenu.setAutoenablesItems(false);
+    for (label, minutes) in ACTIVATE_FOR_ENTRIES {
+        let item = make_item(mtm, label, Some(sel!(activateFor:)), handler_obj);
+        item.setTag(*minutes);
+        submenu.addItem(&item);
+    }
+    activate_for_item.setSubmenu(Some(&submenu));
+    menu.addItem(&activate_for_item);
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // 4. Quit.
+    // 4. Preferences.
+    let prefs = make_item(
+        mtm,
+        "Preferences…",
+        Some(sel!(openPreferences:)),
+        handler_obj,
+    );
+    prefs.setKeyEquivalent(ns_string!(","));
+    menu.addItem(&prefs);
+
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
+
+    // 5. Quit.
     let quit_item = make_item(mtm, "Quit Open-Lid", Some(sel!(quit:)), handler_obj);
     quit_item.setKeyEquivalent(ns_string!("q"));
     menu.addItem(&quit_item);
@@ -177,13 +194,9 @@ pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
         menu,
         status_item,
         toggle_item,
-        mode_lid_closed,
-        mode_always_awake,
     }
 }
 
-/// Construct an NSMenuItem with the given title, optional action selector,
-/// and target. The empty key-equivalent string means "no shortcut".
 fn make_item(
     mtm: MainThreadMarker,
     title: &str,
@@ -191,9 +204,7 @@ fn make_item(
     target: &AnyObject,
 ) -> Retained<NSMenuItem> {
     let title = NSString::from_str(title);
-    // SAFETY: title is a valid NSString, `action` (if Some) is a real selector
-    // declared on `MenuHandler`, and the empty key-equivalent is documented
-    // as "no shortcut".
+    // SAFETY: title is valid NSString; action selectors are declared above.
     let item = unsafe {
         NSMenuItem::initWithTitle_action_keyEquivalent(
             NSMenuItem::alloc(mtm),
@@ -203,8 +214,7 @@ fn make_item(
         )
     };
     if action.is_some() {
-        // SAFETY: `target` is an NSObject (the MenuHandler), which is the
-        // correct type for `setTarget:`.
+        // SAFETY: `target` is a MenuHandler NSObject.
         unsafe {
             item.setTarget(Some(target));
         }
@@ -212,52 +222,34 @@ fn make_item(
     item
 }
 
-// ---------------------------------------------------------------------------
-// Snapshot → UI text/state.
-
-/// Format the "Status: … · Mode: …" line shown in the disabled header item.
+/// Format the status row: "Active until 18:30 · Lid open · AC" or similar.
 pub fn format_status_header(snap: &Snapshot) -> String {
     let prevention = if snap.preventing_sleep_now {
-        "Preventing sleep"
+        if let Some(t) = snap.until {
+            format!("Active until {}", t.format("%H:%M"))
+        } else {
+            "Active (indefinite)".to_string()
+        }
     } else if snap.enabled {
-        "Armed (idle)"
+        "Armed (idle)".to_string()
     } else {
-        "Off"
-    };
-    let mode = match &snap.mode {
-        Mode::LidClosed => "Lid-closed".to_string(),
-        Mode::AlwaysAwake => "Always awake".to_string(),
-        Mode::Timed { until } => format!("Timed (until {})", until.format("%H:%M")),
+        "Off".to_string()
     };
     let lid = match snap.lid {
-        LidState::Open => "open",
-        LidState::Closed => "closed",
+        LidState::Open => "lid open",
+        LidState::Closed => "lid closed",
     };
     let power = match snap.power {
         PowerSource::Ac => "AC".to_string(),
         PowerSource::Battery { percent } => format!("battery {percent}%"),
     };
-    format!("Status: {prevention} · Mode: {mode} · Lid {lid} · {power}")
+    format!("{prevention} · {lid} · {power}")
 }
 
-/// Refresh the menu's mutable items from the current snapshot. Caller has
-/// already confirmed we're on the main thread (NSMenu requires it).
 pub fn refresh_menu(menu: &BuiltMenu, snap: &Snapshot) {
-    // Status header.
     let header = NSString::from_str(&format_status_header(snap));
     menu.status_item.setTitle(&header);
 
-    // Toggle row title flips with the current enabled state.
     let toggle_title = if snap.enabled { "Turn Off" } else { "Turn On" };
     menu.toggle_item.setTitle(&NSString::from_str(toggle_title));
-
-    // Mode submenu checkmarks.
-    let (lc, aa) = match snap.mode {
-        Mode::LidClosed => (NSControlStateValueOn, NSControlStateValueOff),
-        Mode::AlwaysAwake => (NSControlStateValueOff, NSControlStateValueOn),
-        // Timed is not exposed in the MVP submenu; show neither checked.
-        Mode::Timed { .. } => (NSControlStateValueOff, NSControlStateValueOff),
-    };
-    menu.mode_lid_closed.setState(lc);
-    menu.mode_always_awake.setState(aa);
 }

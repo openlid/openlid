@@ -1,13 +1,11 @@
-use crate::cli::{ConfigArg, ModeArg, ModifierArg};
+use crate::cli::ConfigArg;
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone};
 use interprocess::local_socket::{
-    GenericFilePath, Stream, ToFsName,
-    traits::Stream as StreamTrait,
+    traits::Stream as StreamTrait, GenericFilePath, Stream, ToFsName,
 };
 use open_lid_core::config::Config;
 use open_lid_core::ipc::control::{ControlRequest, ControlResponse, Snapshot};
-use open_lid_core::mode::Mode;
 use std::io::{BufRead, BufReader, Write};
 use std::time::Duration as StdDuration;
 
@@ -50,20 +48,45 @@ fn try_send(path: &std::path::Path, req: &ControlRequest) -> Result<ControlRespo
     Ok(serde_json::from_str(line.trim())?)
 }
 
-pub fn set_enabled(enabled: bool) -> Result<()> {
-    match send_request(ControlRequest::SetEnabled { enabled }, true)? {
+fn set(enabled: bool, until: Option<DateTime<Local>>) -> Result<ControlResponse> {
+    send_request(ControlRequest::SetEnabled { enabled, until }, true)
+}
+
+fn print_set_result(resp: ControlResponse) -> Result<()> {
+    match resp {
         ControlResponse::Ok { state } => {
-            // Report the user's intent (the toggle state), not the
-            // moment-to-moment "actually preventing right now" state. In
-            // mode `lid-closed` with the lid open, the toggle is on but
-            // we're not actively calling pmset yet — that's still "ON"
-            // from the user's perspective.
             println!("{}", if state.enabled { "ON" } else { "OFF" });
             Ok(())
         }
         ControlResponse::Error { message } => Err(anyhow!(message)),
         _ => Err(anyhow!("unexpected response")),
     }
+}
+
+/// `open-lid on` — activate using the user's Default duration preference.
+/// If Default duration is None (indefinite), starts an unbounded session.
+pub fn on_default_duration() -> Result<()> {
+    // We have to ask the running app what the user's default is. The simplest
+    // path: GetStatus first, read default_duration_minutes, then SetEnabled.
+    let snap = match send_request(ControlRequest::GetStatus, true)? {
+        ControlResponse::Ok { state } => state,
+        ControlResponse::Error { message } => return Err(anyhow!(message)),
+        _ => return Err(anyhow!("unexpected response")),
+    };
+    let until = snap
+        .default_duration_minutes
+        .map(|m| Local::now() + Duration::minutes(m as i64));
+    print_set_result(set(true, until)?)
+}
+
+pub fn off() -> Result<()> {
+    print_set_result(send_request(
+        ControlRequest::SetEnabled {
+            enabled: false,
+            until: None,
+        },
+        true,
+    )?)
 }
 
 pub fn status(json: bool) -> Result<()> {
@@ -93,58 +116,51 @@ pub fn status(json: bool) -> Result<()> {
 
 fn print_status_human(s: &Snapshot) {
     let state_label = match (s.enabled, s.preventing_sleep_now) {
-        (false, _) => "OFF",
-        (true, true) => "ON (preventing sleep now)",
-        (true, false) => "ON (armed, idle)",
+        (false, _) => "OFF".to_string(),
+        (true, true) => {
+            if let Some(t) = s.until {
+                format!("ON until {} (preventing sleep now)", t.format("%H:%M"))
+            } else {
+                "ON (preventing sleep now)".to_string()
+            }
+        }
+        (true, false) => "ON (armed, idle)".to_string(),
     };
     println!("Sleep prevention: {state_label}");
-    println!("Mode:             {:?}", s.mode);
     println!("Lid:              {:?}", s.lid);
     println!("Power:            {:?}", s.power);
-}
-
-pub fn set_mode(mode: ModeArg) -> Result<()> {
-    let m = match mode {
-        ModeArg::LidClosed => Mode::LidClosed,
-        ModeArg::AlwaysAwake => Mode::AlwaysAwake,
-    };
-    match send_request(ControlRequest::SetMode { mode: m }, true)? {
-        ControlResponse::Ok { .. } => Ok(()),
-        ControlResponse::Error { message } => Err(anyhow!(message)),
-        _ => Err(anyhow!("unexpected response")),
+    if let Some(pct) = s.battery_threshold_pct {
+        println!("Auto-off below:   {pct}% battery");
     }
 }
 
 pub fn for_duration(s: &str) -> Result<()> {
     let dur = humantime::parse_duration(s).context("invalid duration")?;
     let until: DateTime<Local> = Local::now() + Duration::from_std(dur)?;
-    let req = ControlRequest::SetMode { mode: Mode::Timed { until } };
-    send_request(req, true)?;
-    set_enabled(true)
+    print_set_result(set(true, Some(until))?)
 }
 
 pub fn until(s: &str) -> Result<()> {
     let until = parse_until(s)?;
-    let req = ControlRequest::SetMode { mode: Mode::Timed { until } };
-    send_request(req, true)?;
-    set_enabled(true)
+    print_set_result(set(true, Some(until))?)
 }
 
 fn parse_until(s: &str) -> Result<DateTime<Local>> {
     if let Ok(t) = NaiveTime::parse_from_str(s, "%H:%M") {
         let today = Local::now().date_naive().and_time(t);
         let dt = Local.from_local_datetime(&today).single().unwrap();
-        return Ok(if dt > Local::now() { dt } else { dt + Duration::days(1) });
+        return Ok(if dt > Local::now() {
+            dt
+        } else {
+            dt + Duration::days(1)
+        });
     }
     let naive = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M")
         .context("expected HH:MM or YYYY-MM-DDTHH:MM")?;
-    Local.from_local_datetime(&naive).single()
+    Local
+        .from_local_datetime(&naive)
+        .single()
         .ok_or_else(|| anyhow!("ambiguous local time"))
-}
-
-pub fn modifier(_m: ModifierArg) -> Result<()> {
-    println!("modifier commands are stubbed in MVP; coming in Plan 2.");
-    Ok(())
 }
 
 pub fn config(c: ConfigArg) -> Result<()> {

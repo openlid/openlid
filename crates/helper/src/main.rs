@@ -18,7 +18,42 @@ use std::sync::Arc;
 use pmset::Pmset;
 
 const HELPER_MACH_SERVICE_NAME: &str = "io.openlid.helper";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Code-requirement string: who is allowed to send XPC requests to the helper.
+//
+// The helper validates every incoming connection's signing identity against
+// this string (via SecRequirementCreateWithString + SecCodeCheckValidity).
+// A mismatch causes the connection to be rejected silently.
+//
+// Two profiles are available; only one should be active at a time. The
+// default is DEV until you have an Apple Developer Program membership and
+// know your Team ID, at which point you switch to PROD.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// DEV — permissive. Only requires that the caller claim bundle identifier
+/// `io.openlid.app`. Ad-hoc-signed local builds satisfy this. NEVER ship a
+/// distributed build with DEV active — any locally compiled "io.openlid.app"
+/// could control your root daemon.
+#[allow(dead_code)]
 const DEV_REQUIREMENT: &str = r#"identifier "io.openlid.app""#;
+
+/// PROD — pins to bundle id + Apple-issued Developer ID Application cert
+/// chain + your specific Team ID. To activate:
+///   1. Replace `TEAMID` below with your actual 10-character Team ID
+///      (e.g., `ABCD123456`). You can find it at
+///      https://developer.apple.com/account → Membership → Team ID.
+///   2. Decide whether you want notarization to be required (see below).
+///   3. Switch the `validator = …` line further down to use PROD_REQUIREMENT.
+///
+/// The certificate field OIDs in this string are Apple-assigned:
+///   • `1.2.840.113635.100.6.2.6`  — "Developer ID" intermediate CA
+///   • `1.2.840.113635.100.6.1.13` — "Developer ID Application" leaf cert
+///
+/// Together they mean: "the binary must be signed by a Developer ID
+/// Application certificate issued under Apple's Developer ID CA to my team."
+#[allow(dead_code)]
+const PROD_REQUIREMENT: &str = r#"identifier "io.openlid.app" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "TEAMID""#;
 
 fn main() -> Result<()> {
     setup_logging()?;

@@ -1,15 +1,6 @@
 use bitflags::bitflags;
-use chrono::{DateTime, Local, NaiveTime};
+use chrono::NaiveTime;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "kebab-case")]
-pub enum Mode {
-    #[default]
-    LidClosed,
-    AlwaysAwake,
-    Timed { until: DateTime<Local> },
-}
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,25 +139,7 @@ impl Schedule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn mode_lid_closed_round_trips() {
-        let m = Mode::LidClosed;
-        let s = toml::to_string(&m).unwrap();
-        let back: Mode = toml::from_str(&s).unwrap();
-        assert_eq!(m, back);
-    }
-
-    #[test]
-    fn mode_timed_round_trips() {
-        let until = Local.with_ymd_and_hms(2026, 5, 10, 18, 0, 0).unwrap();
-        let m = Mode::Timed { until };
-        let s = serde_json::to_string(&m).unwrap();
-        assert!(s.contains("timed"));
-        let back: Mode = serde_json::from_str(&s).unwrap();
-        assert_eq!(m, back);
-    }
+    use chrono::{Local, TimeZone};
 
     #[test]
     fn modifiers_default_is_all_off() {

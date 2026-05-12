@@ -1,12 +1,20 @@
-use crate::mode::{LidState, Mode, Modifiers, PowerSource};
+use crate::mode::{LidState, Modifiers, PowerSource};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
+/// Live application state. `enabled` and `modifiers` persist to config;
+/// `lid`, `power`, and `until` are runtime-only.
+///
+/// `until` is the optional timer expiry. When `Some(t)` and `t > now`, sleep
+/// prevention is active. When `t <= now`, it's expired (the runtime should
+/// clear it on the next reconcile and disable). When `None`, the toggle is
+/// indefinite — stays on until the user turns it off.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppState {
     pub enabled: bool,
-    pub mode: Mode,
     pub modifiers: Modifiers,
+    #[serde(skip)]
+    pub until: Option<DateTime<Local>>,
     #[serde(skip)]
     pub lid: LidState,
     #[serde(skip)]
@@ -17,8 +25,8 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             enabled: false,
-            mode: Mode::default(),
             modifiers: Modifiers::default(),
+            until: None,
             lid: LidState::Open,
             power: PowerSource::Ac,
         }
@@ -26,6 +34,9 @@ impl Default for AppState {
 }
 
 /// The single source of truth: "should we be preventing sleep right now?"
+///
+/// Behavior (post-mode-removal): when `enabled`, prevent sleep — like keep-awake-style.
+/// If a timer is set (`until = Some(t)`), prevention stops at `t`.
 pub fn should_prevent_sleep(state: &AppState, now: DateTime<Local>) -> bool {
     if !state.enabled {
         return false;
@@ -33,11 +44,10 @@ pub fn should_prevent_sleep(state: &AppState, now: DateTime<Local>) -> bool {
     if !modifiers_allow(&state.modifiers, now, &state.power) {
         return false;
     }
-    match &state.mode {
-        Mode::LidClosed => state.lid == LidState::Closed,
-        Mode::AlwaysAwake => true,
-        Mode::Timed { until } => now < *until,
+    if let Some(until) = state.until {
+        return now < until;
     }
+    true
 }
 
 fn modifiers_allow(m: &Modifiers, now: DateTime<Local>, power: &PowerSource) -> bool {
@@ -72,8 +82,8 @@ mod tests {
     fn base() -> AppState {
         AppState {
             enabled: true,
-            mode: Mode::LidClosed,
             modifiers: Modifiers::default(),
+            until: None,
             lid: LidState::Closed,
             power: PowerSource::Ac,
         }
@@ -87,42 +97,30 @@ mod tests {
     }
 
     #[test]
-    fn lid_closed_mode_with_lid_open_does_not_prevent() {
+    fn enabled_indefinite_prevents_regardless_of_lid() {
         let mut s = base();
         s.lid = LidState::Open;
+        assert!(should_prevent_sleep(&s, t()));
+    }
+
+    #[test]
+    fn enabled_with_timer_in_future_prevents() {
+        let mut s = base();
+        s.until = Some(t() + chrono::Duration::hours(2));
+        assert!(should_prevent_sleep(&s, t()));
+    }
+
+    #[test]
+    fn enabled_with_timer_in_past_does_not_prevent() {
+        let mut s = base();
+        s.until = Some(t() - chrono::Duration::hours(1));
         assert!(!should_prevent_sleep(&s, t()));
     }
 
     #[test]
-    fn lid_closed_mode_with_lid_closed_prevents() {
-        let s = base();
-        assert!(should_prevent_sleep(&s, t()));
-    }
-
-    #[test]
-    fn always_awake_prevents_regardless_of_lid() {
+    fn enabled_with_timer_at_exact_expiry_does_not_prevent() {
         let mut s = base();
-        s.mode = Mode::AlwaysAwake;
-        s.lid = LidState::Open;
-        assert!(should_prevent_sleep(&s, t()));
-    }
-
-    #[test]
-    fn timed_mode_before_until_prevents() {
-        let mut s = base();
-        s.mode = Mode::Timed {
-            until: t() + chrono::Duration::hours(2),
-        };
-        s.lid = LidState::Open;
-        assert!(should_prevent_sleep(&s, t()));
-    }
-
-    #[test]
-    fn timed_mode_after_until_does_not_prevent() {
-        let mut s = base();
-        s.mode = Mode::Timed {
-            until: t() - chrono::Duration::hours(1),
-        };
+        s.until = Some(t());
         assert!(!should_prevent_sleep(&s, t()));
     }
 
