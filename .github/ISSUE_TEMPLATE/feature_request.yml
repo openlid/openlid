@@ -1,0 +1,66 @@
+name: Feature Request
+description: Suggest a new feature or behavior change.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Before submitting, please skim
+        [the CONTRIBUTING guide](../CONTRIBUTING.md) — especially the
+        "What kinds of contributions are welcome" section. Open-Lid is
+        intentionally small, so some feature requests will be politely
+        declined to keep the surface area focused.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: |
+        Describe the use case in your own words, not the proposed solution.
+        Example: "When I'm on battery, I want Open-Lid to auto-pause so my
+        battery doesn't drain unexpectedly."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: |
+        How should Open-Lid behave to solve this? A specific UI change,
+        a new CLI command, a new config option, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Are there existing apps, scripts, or workflows that solve this
+        differently? If so, why isn't that enough?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: How urgent / important is this for you?
+      options:
+        - "Nice to have"
+        - "Would help significantly"
+        - "Blocking my use of Open-Lid"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched [existing issues and discussions](https://github.com/diyanbogdanov/open-lid/issues?q=is%3Aissue) for similar requests.
+          required: true
+        - label: I read the CONTRIBUTING guide's "What kinds of contributions are welcome" section.
+          required: true
