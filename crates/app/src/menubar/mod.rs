@@ -6,6 +6,7 @@
 //! `NSStatusItem` UI and pumps the AppKit event loop.
 mod icons;
 mod menu;
+mod preferences;
 mod status_item;
 
 use crate::control_server;
@@ -13,7 +14,7 @@ use crate::helper_client::{HelperClient, HelperPowerController};
 use crate::platform::macos::{
     display::MacDisplayController, lid_monitor::MacLidMonitor, power_source::MacPowerSourceMonitor,
 };
-use crate::state_runtime::StateRuntime;
+use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
 use menu::MenuActions;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -23,6 +24,7 @@ use open_lid_core::config::Config;
 use open_lid_core::platform::{
     DisplayController, LidObserver, PowerController, PowerSourceMonitor,
 };
+use preferences::{PreferencesWindow, PrefsActions};
 use status_item::{StatusItemUI, UIShared};
 use std::sync::{Arc, OnceLock};
 
@@ -62,6 +64,12 @@ pub fn run() -> Result<()> {
     actions
         .install_ui(ui.shared())
         .map_err(|_| anyhow::anyhow!("actions UI installed twice"))?;
+    // Stash a self-Arc that `open_preferences` can hand to the prefs window
+    // handler. The cycle (RuntimeActions → Arc<dyn PrefsActions> → same
+    // RuntimeActions) is intentional and lives for the rest of the process.
+    actions
+        .install_self_prefs(actions.clone() as Arc<dyn PrefsActions>)
+        .map_err(|_| anyhow::anyhow!("self_prefs installed twice"))?;
 
     // First paint reflects the persisted state.
     ui.refresh(&runtime.snapshot(), mtm);
@@ -105,6 +113,14 @@ where
 {
     runtime: Arc<StateRuntime<P, L, S, D>>,
     ui: OnceLock<Arc<UIShared>>,
+    /// Self-Arc used to hand `Arc<dyn PrefsActions>` to `PreferencesWindow`
+    /// from inside `&self` methods. Installed once at startup (alongside the
+    /// UI handle); used only on the main thread.
+    self_prefs: OnceLock<Arc<dyn PrefsActions>>,
+    /// Lazily-constructed preferences window. Built on first
+    /// `MenuActions::open_preferences` call (always main-thread) and reused
+    /// for the rest of the process's life.
+    prefs_window: OnceLock<PreferencesWindow>,
 }
 
 impl<P, L, S, D> RuntimeActions<P, L, S, D>
@@ -118,7 +134,15 @@ where
         Self {
             runtime,
             ui: OnceLock::new(),
+            self_prefs: OnceLock::new(),
+            prefs_window: OnceLock::new(),
         }
+    }
+
+    /// Install a self-Arc for handing to `PreferencesWindow`. Must be called
+    /// exactly once at startup.
+    fn install_self_prefs(&self, self_arc: Arc<dyn PrefsActions>) -> Result<(), Arc<dyn PrefsActions>> {
+        self.self_prefs.set(self_arc)
     }
 
     /// Install the UI handle. Must be called exactly once; returns the value
@@ -185,8 +209,25 @@ where
     }
 
     fn open_preferences(&self) {
-        // Wired in Phase 3 (preferences window).
-        tracing::info!("open_preferences: not yet implemented");
+        // Menu click handlers run on the main thread, so an MTM should be
+        // obtainable. If not, log and bail — calling AppKit from the wrong
+        // thread is worse than not opening the window.
+        let Some(mtm) = MainThreadMarker::new() else {
+            tracing::error!("open_preferences: not on main thread; cannot open window");
+            return;
+        };
+        let window = self.prefs_window.get_or_init(|| {
+            // The self-Arc must have been installed at startup. If not, we
+            // can't construct the window because the handler needs an
+            // `Arc<dyn PrefsActions>` for its ivars.
+            let actions = self
+                .self_prefs
+                .get()
+                .expect("self_prefs not installed before open_preferences")
+                .clone();
+            PreferencesWindow::new(mtm, actions)
+        });
+        window.show(&self.runtime.snapshot(), mtm);
     }
 
     fn quit(&self) {
@@ -209,5 +250,57 @@ where
         } else {
             tracing::error!("quit: not on main thread; cannot terminate cleanly");
         }
+    }
+}
+
+impl<P, L, S, D> PrefsActions for RuntimeActions<P, L, S, D>
+where
+    P: PowerController + Send + Sync + 'static,
+    L: LidObserver + Send + Sync + 'static,
+    S: PowerSourceMonitor + Send + Sync + 'static,
+    D: DisplayController + Send + Sync + 'static,
+{
+    fn set_start_at_login(&self, enabled: bool) {
+        let patch = PrefsPatch {
+            start_at_login: Some(enabled),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_start_at_login failed: {e:#}");
+        }
+        self.refresh();
+    }
+
+    fn set_activate_at_launch(&self, enabled: bool) {
+        let patch = PrefsPatch {
+            activate_at_launch: Some(enabled),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_activate_at_launch failed: {e:#}");
+        }
+        self.refresh();
+    }
+
+    fn set_default_duration(&self, minutes: Option<u32>) {
+        let patch = PrefsPatch {
+            default_duration_minutes: Some(minutes),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_default_duration failed: {e:#}");
+        }
+        self.refresh();
+    }
+
+    fn set_battery_threshold(&self, pct: Option<u8>) {
+        let patch = PrefsPatch {
+            battery_threshold_pct: Some(pct),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_battery_threshold failed: {e:#}");
+        }
+        self.refresh();
     }
 }
