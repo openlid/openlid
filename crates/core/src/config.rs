@@ -5,6 +5,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Highest `config.toml` schema version this build knows about.
+///
+/// Bumped only when fields are removed or renamed (breaking changes).
+/// Additive changes — new fields with `#[serde(default)]` — do not require
+/// bumping this. See `docs/COMPATIBILITY.md`.
+pub const SCHEMA_VERSION: u32 = 1;
+
 /// Persisted user configuration. Lives at
 /// `~/Library/Application Support/open-lid/config.toml` on macOS.
 ///
@@ -16,8 +23,13 @@ use thiserror::Error;
 ///     `battery_threshold_pct` preference).
 ///   * UX preferences: `start_at_login`, `activate_at_launch`,
 ///     `default_duration_minutes`, `battery_threshold_pct`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
+    /// Schema version. Used to detect configs written by a newer binary.
+    /// See `SCHEMA_VERSION` and the warn-on-newer branch in `Config::load`.
+    #[serde(default = "default_schema_version")]
+    pub version: u32,
+
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
@@ -45,6 +57,24 @@ pub struct Config {
     /// reactivates — we don't auto-reactivate on power restore.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battery_threshold_pct: Option<u8>,
+}
+
+fn default_schema_version() -> u32 {
+    SCHEMA_VERSION
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            version: SCHEMA_VERSION,
+            enabled: false,
+            modifiers: Modifiers::default(),
+            start_at_login: false,
+            activate_at_launch: false,
+            default_duration_minutes: None,
+            battery_threshold_pct: None,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -107,6 +137,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let p = dir.path().join("subdir").join("config.toml");
         let cfg = Config {
+            version: 1,
             enabled: true,
             modifiers: Modifiers {
                 only_on_ac: true,
@@ -140,5 +171,42 @@ mod tests {
         assert!(!cfg.activate_at_launch);
         assert!(cfg.default_duration_minutes.is_none());
         assert!(cfg.battery_threshold_pct.is_none());
+    }
+
+    #[test]
+    fn default_config_has_schema_version() {
+        // The manual Default impl must set version to SCHEMA_VERSION, not
+        // Rust's integer default (0). Asserting against the constant rather
+        // than the literal 1 keeps this test correct across version bumps.
+        let cfg = Config::default();
+        assert_eq!(cfg.version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn save_writes_version_field_into_toml() {
+        // The saved TOML must carry the current schema version so older
+        // binaries (post-v1.0, seeing an unknown future version) can detect
+        // the schema bump.
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("config.toml");
+        Config::default().save(&p).unwrap();
+        let raw = std::fs::read_to_string(&p).unwrap();
+        let expected = format!("version = {SCHEMA_VERSION}");
+        assert!(
+            raw.contains(&expected),
+            "expected '{expected}' in saved TOML, got:\n{raw}"
+        );
+    }
+
+    #[test]
+    fn config_missing_version_field_loads_as_version_one() {
+        // Back-compat: a v0.1 config file with no `version` line must load
+        // cleanly under v1.0 as if it had `version = 1`.
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("config.toml");
+        std::fs::write(&p, "enabled = true\nstart_at_login = false\n").unwrap();
+        let cfg = Config::load(&p).unwrap();
+        assert_eq!(cfg.version, 1);
+        assert!(cfg.enabled);
     }
 }
