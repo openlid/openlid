@@ -13,7 +13,10 @@ use thiserror::Error;
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// Persisted user configuration. Lives at
-/// `~/Library/Application Support/open-lid/config.toml` on macOS.
+/// `~/Library/Application Support/io.openlid.open-lid/config.toml` on
+/// macOS — the path is computed by `directories::ProjectDirs` from the
+/// reverse-DNS triple `("io", "openlid", "open-lid")`, not the friendly
+/// `open-lid` short name.
 ///
 /// Fields are partitioned into three groups:
 ///   * Toggle state: `enabled` (persisted so "Restore last state" on launch
@@ -57,6 +60,15 @@ pub struct Config {
     /// reactivates — we don't auto-reactivate on power restore.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battery_threshold_pct: Option<u8>,
+
+    /// When `true` (the default), holding an `IOPMAssertion` keeps the
+    /// display from going to sleep on idle while sleep prevention is active,
+    /// which in turn prevents the screen lock from engaging. Released
+    /// automatically when the lid closes and no external display is
+    /// attached, so the battery-saving force-display-sleep on lid-close
+    /// still takes effect.
+    #[serde(default = "default_prevent_display_sleep")]
+    pub prevent_display_sleep: bool,
 }
 
 /// Default version assumed when a config on disk has no `version` field.
@@ -70,6 +82,14 @@ fn default_schema_version() -> u32 {
     1
 }
 
+/// Default for `prevent_display_sleep`. Defaults to `true` because the most
+/// common user expectation — "Open-Lid runs ≈ Caffeine runs" — is that the
+/// screen does not lock while the tool is active. Users who explicitly want
+/// the screen to lock on idle can set this to `false` in `config.toml`.
+fn default_prevent_display_sleep() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Config {
@@ -80,6 +100,7 @@ impl Default for Config {
             activate_at_launch: false,
             default_duration_minutes: None,
             battery_threshold_pct: None,
+            prevent_display_sleep: true,
         }
     }
 }
@@ -172,6 +193,7 @@ mod tests {
             activate_at_launch: false,
             default_duration_minutes: Some(30),
             battery_threshold_pct: Some(20),
+            prevent_display_sleep: false,
         };
         cfg.save(&p).unwrap();
         let back = Config::load(&p).unwrap();
@@ -195,6 +217,29 @@ mod tests {
         assert!(!cfg.activate_at_launch);
         assert!(cfg.default_duration_minutes.is_none());
         assert!(cfg.battery_threshold_pct.is_none());
+    }
+
+    #[test]
+    fn default_prevents_display_sleep() {
+        // The whole point of this field is to ship a Caffeine-equivalent
+        // default: when sleep prevention is active, the display also stays
+        // awake (and so the screen doesn't lock). Flipping this assertion
+        // would silently regress that contract.
+        assert!(Config::default().prevent_display_sleep);
+    }
+
+    #[test]
+    fn config_missing_prevent_display_sleep_loads_as_true() {
+        // Back-compat: a config file written by a v0.x build (or by a user
+        // who omitted the field) must load with `prevent_display_sleep =
+        // true`, matching the new default. If serde silently fell through
+        // to bool's natural default (false), upgrading users would lose
+        // the new behavior they didn't opt out of.
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("config.toml");
+        std::fs::write(&p, "enabled = true\n").unwrap();
+        let cfg = Config::load(&p).unwrap();
+        assert!(cfg.prevent_display_sleep);
     }
 
     #[test]

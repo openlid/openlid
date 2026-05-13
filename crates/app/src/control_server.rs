@@ -1,5 +1,5 @@
 //! Unix domain socket server. Accepts one request per connection, replies, closes.
-//! Path: ~/Library/Application Support/open-lid/control.sock.
+//! Path: ~/Library/Application Support/io.openlid.open-lid/control.sock.
 
 use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
@@ -93,11 +93,13 @@ where
             activate_at_launch,
             default_duration_minutes,
             battery_threshold_pct,
+            prevent_display_sleep,
         } => rt.set_preferences(PrefsPatch {
             start_at_login,
             activate_at_launch,
             default_duration_minutes,
             battery_threshold_pct,
+            prevent_display_sleep,
         }),
         ControlRequest::Uninstall => {
             tracing::info!("uninstall requested via control socket");
