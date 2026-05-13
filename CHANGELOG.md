@@ -20,12 +20,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   surfaces are the CLI subcommands/flags/exit codes, `status --json`
   output shape, `config.toml` field names, control-socket JSON wire
   shapes, and helper XPC method signatures.
+- **Display-sleep prevention.** While Open-Lid is on and the lid is open
+  (or an external display is attached), the menubar app holds an
+  `IOPMAssertion` of type `PreventUserIdleDisplaySleep`, preventing the
+  display from dimming and the screen from locking on idle — keep-awake-style
+  equivalence. Released on lid-close without an external display so the
+  existing `force_display_sleep` battery-saver still wins. New
+  `prevent_display_sleep` field in `config.toml` (default `true`) and a
+  matching "Keep display awake while preventing sleep" checkbox in
+  Preferences. Opt out by either route to restore the v0.1 behavior.
 
 ### Changed
 
 - Roadmap: removed v0.3 (schedule UI, state-change notifications, and
   configurable hotkey are not planned). v1.0 is the next milestone
   after v0.2.
+
+### Fixed
+
+- **Quit no longer silently disables sleep prevention.** The quit
+  handler used to call `set_enabled(false, None)`, which not only
+  released the helper but also persisted `enabled = false` to disk — so
+  every relaunch came up as Off. Replaced with a new
+  `StateRuntime::shutdown_cleanup` that releases runtime side-effects
+  (helper sleep prevention + IOPMAssertion) without touching `AppState`
+  or the on-disk config.
+- **Documented config and control-socket paths corrected** from the
+  friendlier `~/Library/Application Support/open-lid/...` to the
+  actual `directories::ProjectDirs`-computed
+  `~/Library/Application Support/io.openlid.open-lid/...` — affects
+  README, CHANGELOG, COMPATIBILITY, and a couple of doc comments.
 
 ## [0.1.0] - 2026-05-12
 
@@ -53,7 +77,7 @@ First tagged release. Local-use MVP.
 - **Proactive timer expiry** scheduler with generation-counter race
   protection.
 - **Configuration persistence** at
-  `~/Library/Application Support/open-lid/config.toml`.
+  `~/Library/Application Support/io.openlid.open-lid/config.toml`.
 - **Logging** to `~/Library/Application Support/Logs/open-lid/` (rotated
   daily; will move to `~/Library/Logs/open-lid/` in a future release).
 

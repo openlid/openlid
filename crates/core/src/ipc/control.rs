@@ -28,6 +28,8 @@ pub enum ControlRequest {
         default_duration_minutes: Option<Option<u32>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         battery_threshold_pct: Option<Option<u8>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prevent_display_sleep: Option<bool>,
     },
     Uninstall,
     Ping,
@@ -57,6 +59,15 @@ pub struct Snapshot {
     pub activate_at_launch: bool,
     pub default_duration_minutes: Option<u32>,
     pub battery_threshold_pct: Option<u8>,
+    /// Mirrors `Config::prevent_display_sleep`. When `true`, the runtime
+    /// holds an IOPMAssertion that keeps the display awake (and therefore
+    /// the screen unlocked) whenever sleep prevention is active and the lid
+    /// is open (or an external display is attached). Defaults to `true` for
+    /// new installs; older clients deserializing a Snapshot without this
+    /// field will see `false`, which is safe (they were never aware of the
+    /// feature in the first place).
+    #[serde(default)]
+    pub prevent_display_sleep: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -102,6 +113,7 @@ mod tests {
             activate_at_launch: false,
             default_duration_minutes: None,
             battery_threshold_pct: Some(20),
+            prevent_display_sleep: true,
         };
         let s = serde_json::to_string(&snap).unwrap();
         let back: Snapshot = serde_json::from_str(&s).unwrap();
