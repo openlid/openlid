@@ -26,9 +26,9 @@ Inspired by [keep-awake-style](https://lightheadsw.com/keep-awake-style/) and po
 binary and a future-friendly architecture.
 
 > [!NOTE]
-> **Status:** pre-1.0. Apple Silicon, macOS 13+. v0.1 ships unsigned;
-> signed/notarized DMGs and Homebrew distribution land in v0.2 once Apple
-> Developer Program enrollment completes.
+> **Status:** pre-1.0. Apple Silicon, macOS 13+. **v0.2 ships signed and
+> notarized** — no Gatekeeper warning. Helper installs automatically via
+> `SMAppService` — no `sudo` required.
 
 ---
 
@@ -83,29 +83,31 @@ battery gets low.
 
 ## Installation
 
-### From a signed DMG *(coming in v0.2)*
+### Download the signed DMG (recommended)
 
 ```bash
-# Will be:
+# Homebrew tap (once published):
 brew install --cask diyanbogdanov/tap/open-lid
-# Or download the DMG from:
+
+# Or download directly:
 # https://github.com/diyanbogdanov/open-lid/releases/latest
 ```
 
-### From source (current v0.1 path)
+After installing, launch Open-Lid; macOS will prompt you to enable it in
+**System Settings → General → Login Items → Allow in the Background**.
+Flip the Open-Lid toggle on — no admin password required.
 
-Prerequisites: macOS 13+ on Apple Silicon, Rust 1.81+, Xcode Command Line
+### From source
+
+Prerequisites: macOS 13+ on Apple Silicon, Rust 1.88+, Xcode Command Line
 Tools.
 
 ```bash
 git clone https://github.com/diyanbogdanov/open-lid.git
 cd open-lid
 
-# Build, install into /Applications, refresh caches:
+# Build (ad-hoc-signed, dev profile), install into /Applications, refresh caches:
 ./scripts/install.sh
-
-# One-time helper install (requires sudo — the helper toggles pmset as root):
-./scripts/dev-install-helper.sh
 
 # Optional: put `open-lid` on your PATH:
 ./scripts/install-cli-symlink.sh
@@ -230,13 +232,16 @@ sudo rm -f /usr/local/bin/open-lid
 ## Troubleshooting
 
 **Menu bar icon doesn't appear** — Make sure the helper is installed:
-`ls /Library/LaunchDaemons/io.openlid.*`. If it's not there, run
-`./scripts/dev-install-helper.sh`. Then check
+v0.2+ registers the helper automatically via `SMAppService` — but the
+user has to approve it in **System Settings → General → Login Items →
+Allow in the Background**. If you've ignored that prompt, click the menu
+bar icon and the menu will show an approval hint. Then check
 `~/Library/Application Support/Logs/open-lid/app.log.<today>` for errors.
 
-**"Apple cannot verify this app" on download** — v0.1 ships unsigned.
-Right-click the .app and choose Open, or build from source. v0.2 will be
-notarized.
+**"Apple cannot verify this app" on download** — Should not appear on
+v0.2+ (the DMG is notarized). If you see it on a build from source, that's
+expected: local `./scripts/install.sh` produces an ad-hoc-signed bundle.
+Right-click → Open to bypass, or use the official notarized DMG.
 
 **Two OpenLid entries in Spotlight** — You have a build artifact in your
 project tree from an old `build-app-bundle.sh`. Re-run `./scripts/install.sh`;
@@ -263,7 +268,7 @@ prevented; only the display-idle assertion is dropped.
 ## Roadmap
 
 - [x] **v0.1 — Local MVP.** Menu bar app + CLI + preferences + helper.
-- [ ] **v0.2 — Signed distribution.** Notarized DMG, Homebrew tap,
+- [x] **v0.2 — Signed distribution.** Notarized DMG, Homebrew tap,
   `SMAppService` daemon registration replacing the manual `sudo` install.
 - [ ] **v1.0 — Stable API.** Locked CLI, `config.toml` schema, and IPC
   surfaces under semver. Adds a `version` field to the config schema
