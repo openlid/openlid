@@ -24,6 +24,14 @@ pub trait PowerSourceMonitor: Send + Sync {
 pub trait DisplayController: Send + Sync {
     fn has_external_display(&self) -> bool;
     fn force_display_sleep(&self) -> Result<(), PlatformError>;
+    /// Acquire a power-management assertion that prevents the display from
+    /// going to sleep due to user idle. While held, macOS treats the user as
+    /// active — the display stays on, no screen-saver kicks in, no screen
+    /// lock fires. Idempotent: calling twice while already held is a no-op.
+    /// Has no effect on explicit `force_display_sleep` calls or lid-close.
+    fn prevent_display_sleep(&self) -> Result<(), PlatformError>;
+    /// Release the assertion acquired by `prevent_display_sleep`. Idempotent.
+    fn allow_display_sleep(&self) -> Result<(), PlatformError>;
 }
 
 #[derive(Debug, thiserror::Error)]

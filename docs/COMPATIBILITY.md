@@ -35,7 +35,16 @@ Examples requiring a v2.0:
 ### `config.toml`
 
 Stable: every field name currently in the schema (see
-`crates/core/src/config.rs`).
+`crates/core/src/config.rs`). At time of writing:
+
+- `version`
+- `enabled`
+- `start_at_login`
+- `activate_at_launch`
+- `prevent_display_sleep`
+- `default_duration_minutes`
+- `battery_threshold_pct`
+- `[modifiers]` sub-table (`only_on_ac`, `min_battery`, `schedule`)
 
 The schema starts at `version = 1`. Future schema bumps (v2, v3, ...)
 will warn-and-continue on load by current binaries; the `version` field
@@ -70,7 +79,7 @@ Not allowed within v1.x:
 - Changing the type of an existing field.
 
 The transport itself (line-delimited JSON over a Unix domain socket at
-`~/Library/Application Support/open-lid/control.sock`) is NOT covered
+`~/Library/Application Support/io.openlid.open-lid/control.sock`) is NOT covered
 by this promise — see "Not stable" below. The wire shapes are; the
 framing and path may evolve.
 
@@ -117,7 +126,7 @@ change in any release:
 - Internal Rust types, module structure, and trait shapes in
   `open-lid-core` and `open-lid-helper-protocol`.
 - The control-socket path
-  (`~/Library/Application Support/open-lid/control.sock`).
+  (`~/Library/Application Support/io.openlid.open-lid/control.sock`).
 - The control-socket transport framing (currently line-delimited JSON
   with one message per connection). The message *shapes* are locked;
   a future transport may exist alongside the current one.

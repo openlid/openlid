@@ -86,6 +86,7 @@ pub const K_CLAMSHELL_STATE_BIT: usize = 1;
 
 // Power-source FFI for Task 19.
 use core_foundation_sys::base::CFTypeRef;
+use core_foundation_sys::string::CFStringRef;
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
@@ -97,4 +98,25 @@ unsafe extern "C" {
         callback: extern "C" fn(context: *mut std::ffi::c_void),
         context: *mut std::ffi::c_void,
     ) -> *mut std::ffi::c_void;
+}
+
+// IOPMAssertion FFI. Used to keep the display awake (idle-timer reset) without
+// touching system sleep — the user-visible equivalent of what keep-awake-style does.
+// Note: assertion type strings (`kIOPMAssertPreventUserIdleDisplaySleep`) are
+// passed as plain CFStrings; we construct them at the call site from a Rust
+// string rather than dlsym'ing the framework's CFString constants.
+pub type IOPMAssertionID = u32;
+pub type IOPMAssertionLevel = u32;
+pub const K_IOPM_ASSERTION_LEVEL_ON: IOPMAssertionLevel = 255;
+pub const K_IO_RETURN_SUCCESS: IOReturn = 0;
+
+#[link(name = "IOKit", kind = "framework")]
+unsafe extern "C" {
+    pub fn IOPMAssertionCreateWithName(
+        assertion_type: CFStringRef,
+        assertion_level: IOPMAssertionLevel,
+        assertion_name: CFStringRef,
+        assertion_id: *mut IOPMAssertionID,
+    ) -> IOReturn;
+    pub fn IOPMAssertionRelease(assertion_id: IOPMAssertionID) -> IOReturn;
 }

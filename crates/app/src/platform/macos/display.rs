@@ -1,10 +1,38 @@
-//! External-display detection and force-display-sleep.
+//! External-display detection, force-display-sleep, and IOPMAssertion-based
+//! prevent-display-sleep. The assertion is held per-process by this controller
+//! and released either explicitly or when the process exits.
 
-use super::iokit_ffi::{CGDisplayIsBuiltin, CGGetActiveDisplayList};
+use super::iokit_ffi::{
+    CGDisplayIsBuiltin, CGGetActiveDisplayList, IOPMAssertionCreateWithName, IOPMAssertionID,
+    IOPMAssertionRelease, K_IOPM_ASSERTION_LEVEL_ON, K_IO_RETURN_SUCCESS,
+};
+use core_foundation::base::TCFType;
+use core_foundation::string::CFString;
 use open_lid_core::platform::{DisplayController, PlatformError};
 use std::process::Command;
+use std::sync::Mutex;
 
-pub struct MacDisplayController;
+pub struct MacDisplayController {
+    // Holds the live assertion ID while we're keeping the display awake.
+    // `None` = no assertion held. We don't store the ID across process
+    // boundaries; macOS releases it automatically on process exit, so this
+    // also serves as the natural crash-recovery story.
+    assertion: Mutex<Option<IOPMAssertionID>>,
+}
+
+impl MacDisplayController {
+    pub fn new() -> Self {
+        Self {
+            assertion: Mutex::new(None),
+        }
+    }
+}
+
+impl Default for MacDisplayController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl DisplayController for MacDisplayController {
     fn has_external_display(&self) -> bool {
@@ -34,6 +62,49 @@ impl DisplayController for MacDisplayController {
                 String::from_utf8_lossy(&out.stderr)
             )));
         }
+        Ok(())
+    }
+
+    fn prevent_display_sleep(&self) -> Result<(), PlatformError> {
+        let mut guard = self.assertion.lock().unwrap();
+        if guard.is_some() {
+            return Ok(()); // already held — idempotent
+        }
+        let assertion_type = CFString::new("PreventUserIdleDisplaySleep");
+        let assertion_name = CFString::new("io.openlid.app: keep display awake");
+        let mut id: IOPMAssertionID = 0;
+        let r = unsafe {
+            IOPMAssertionCreateWithName(
+                assertion_type.as_concrete_TypeRef(),
+                K_IOPM_ASSERTION_LEVEL_ON,
+                assertion_name.as_concrete_TypeRef(),
+                &mut id,
+            )
+        };
+        if r != K_IO_RETURN_SUCCESS {
+            return Err(PlatformError::Native(format!(
+                "IOPMAssertionCreateWithName failed: {r:#x}"
+            )));
+        }
+        *guard = Some(id);
+        tracing::debug!("acquired PreventUserIdleDisplaySleep assertion id={id}");
+        Ok(())
+    }
+
+    fn allow_display_sleep(&self) -> Result<(), PlatformError> {
+        let mut guard = self.assertion.lock().unwrap();
+        let Some(id) = guard.take() else {
+            return Ok(()); // not held — idempotent
+        };
+        let r = unsafe { IOPMAssertionRelease(id) };
+        if r != K_IO_RETURN_SUCCESS {
+            // Re-park the id so a retry can release it, then surface the error.
+            *guard = Some(id);
+            return Err(PlatformError::Native(format!(
+                "IOPMAssertionRelease failed: {r:#x}"
+            )));
+        }
+        tracing::debug!("released PreventUserIdleDisplaySleep assertion id={id}");
         Ok(())
     }
 }

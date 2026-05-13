@@ -157,6 +157,24 @@ icon and menu items; the listener dispatches to the AppKit main thread
 via `dispatch_async_f` so callbacks from worker threads (like the UDS
 server) don't touch AppKit off-main.
 
+### Two outputs from one reconciler
+
+The reconciler computes two desired states from the same `AppState`:
+
+1. **System-sleep prevention** (`desired = should_prevent_sleep(state)`) →
+   dispatched to the helper over NSXPC, which runs `pmset -a disablesleep`
+   under root.
+2. **Display-idle prevention** (`want_assertion = desired && cfg
+   .prevent_display_sleep && (lid_open || external_display)`) → managed
+   in-process via `IOPMAssertion`, no helper involvement. Held only while
+   there is actually a display worth keeping awake; released when the lid
+   closes with no external monitor so that the `force_display_sleep`
+   branch above lands uncontested.
+
+Each output has its own `last_applied`-style cache (`last_applied` and
+`last_assertion_held` respectively) so a reconcile that finds nothing
+changed is a no-op for both layers.
+
 ## Reconcile pattern
 
 The helper is **stateless about modes** — it only knows on/off. The
@@ -166,23 +184,39 @@ sleep right now" and telling the helper. After every state change:
 ```rust
 fn reconcile(&self) {
     let desired = should_prevent_sleep(&state, Local::now());
-    if last_applied == desired { return; }            // idempotent
-    match desired {
-        true  => self.power.prevent_sleep(),          // XPC to helper
-        false => self.power.allow_sleep(),
+    // (1) System sleep — dispatched over NSXPC to the privileged helper.
+    if last_applied != desired {
+        match desired {
+            true  => self.power.prevent_sleep(),
+            false => self.power.allow_sleep(),
+        }
+        last_applied = desired;
     }
-    last_applied = desired;
+    // (2) Display-idle sleep — in-process IOPMAssertion. Held only when
+    //     there's a display worth keeping awake.
+    let want = desired
+        && cfg.prevent_display_sleep
+        && (state.lid == LidState::Open || display.has_external_display());
+    if last_assertion_held != want {
+        match want {
+            true  => self.display.prevent_display_sleep(),
+            false => self.display.allow_display_sleep(),
+        }
+        last_assertion_held = want;
+    }
 }
 ```
 
 This is the diff-and-apply pattern from declarative-configuration
-literature, scaled to a single boolean. The benefits:
+literature, scaled to two booleans. The benefits:
 
 - **Idempotent.** A `set_enabled(true)` followed by another `set_enabled(true)`
-  results in *one* XPC call, not two.
+  results in *one* XPC call and *one* assertion acquire, not two.
 - **Crash-resistant.** On menubar restart, the state runtime loads the
   persisted `enabled` flag from config, calls reconcile once, and the
-  helper picks up where it left off.
+  helper picks up where it left off. Display assertions are
+  process-scoped and are released by macOS automatically when the app
+  exits — no extra recovery code needed.
 - **Helper independence.** The helper has its own startup-time
   reconciliation: if its ownership marker exists but no client has
   connected, it assumes the previous app crashed and restores normal
