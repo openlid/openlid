@@ -22,7 +22,7 @@ jobs:
     name: build, sign, notarize, publish
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
@@ -196,7 +196,7 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: publish draft release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.version }}
           name: ${{ steps.ver.outputs.version }}
