@@ -50,7 +50,7 @@ pub fn run() -> Result<()> {
     // Platform impls.
     let lid = Arc::new(MacLidMonitor::start()?);
     let ps = Arc::new(MacPowerSourceMonitor::start()?);
-    let display = Arc::new(MacDisplayController);
+    let display = Arc::new(MacDisplayController::new());
     let client = Arc::new(HelperClient::new()?);
     let power = Arc::new(HelperPowerController::new(client.clone()));
 
@@ -280,11 +280,13 @@ where
     }
 
     fn quit(&self) {
-        // 1. Disarm sleep prevention so the helper doesn't keep the machine
-        //    awake after we exit.
-        if let Err(e) = self.runtime.set_enabled(false, None) {
-            tracing::warn!("quit: failed to disarm sleep prevention: {e:#}");
-        }
+        // 1. Release runtime side-effects (helper sleep prevention + display
+        //    assertion) without persisting `enabled = false` to disk.
+        //    `set_enabled(false, None)` would also write through to the
+        //    config, which would silently overwrite the user's last toggle
+        //    on every quit — restoring "last state" on relaunch would
+        //    always come up as Off.
+        self.runtime.shutdown_cleanup();
 
         // 2. Best-effort socket cleanup.
         if let Ok(p) = control_server::control_socket_path() {
@@ -349,6 +351,17 @@ where
         };
         if let Err(e) = self.runtime.set_preferences(patch) {
             tracing::error!("set_battery_threshold failed: {e:#}");
+        }
+        self.refresh();
+    }
+
+    fn set_prevent_display_sleep(&self, enabled: bool) {
+        let patch = PrefsPatch {
+            prevent_display_sleep: Some(enabled),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_prevent_display_sleep failed: {e:#}");
         }
         self.refresh();
     }
