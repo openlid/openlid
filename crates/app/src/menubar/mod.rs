@@ -177,11 +177,11 @@ fn try_register_helper() {
                 );
             }
             Ok(other) => {
-                tracing::warn!(
-                    "helper SMAppService: registered but unexpected status {other:?}"
-                );
+                tracing::warn!("helper SMAppService: registered but unexpected status {other:?}");
             }
-            Err(e) => tracing::warn!("helper SMAppService: post-register status check failed: {e:#}"),
+            Err(e) => {
+                tracing::warn!("helper SMAppService: post-register status check failed: {e:#}")
+            }
         },
         Err(e) => tracing::warn!("helper SMAppService register failed: {e:#}"),
     }
