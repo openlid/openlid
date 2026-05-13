@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "Tag or ref to release (e.g. v0.1.0)"
+        description: "Tag or ref to release (e.g. v0.2.0)"
         required: true
 
 permissions:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   release:
-    name: build DMG and publish draft release
+    name: build, sign, notarize, publish
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -32,26 +32,106 @@ jobs:
       - name: install create-dmg
         run: brew install create-dmg
 
-      - name: build .app bundle (ad-hoc signed)
+      # ─────────────────────────────────────────────────────────────────────
+      # Import the Developer ID Application signing certificate into a
+      # temporary keychain. The keychain is destroyed at end-of-job (and is
+      # a fresh one anyway since the runner is ephemeral); this avoids
+      # polluting any future runner snapshot and isolates secrets per-run.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: import code-signing certificate
+        env:
+          CERT_BASE64: ${{ secrets.APPLE_SIGNING_CERT_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASS="$(uuidgen)"
+
+          # Decode the .p12 to a temp file. `--decode` works on macOS too.
+          printf '%s' "$CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+
+          security import "$RUNNER_TEMP/cert.p12" \
+              -k "$KEYCHAIN_PATH" \
+              -P "$CERT_PASSWORD" \
+              -T /usr/bin/codesign
+
+          # Allow codesign to use the imported key without an interactive
+          # password prompt.
+          security set-key-partition-list \
+              -S apple-tool:,apple:,codesign: \
+              -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+
+          # Prepend our keychain to the search list so codesign can find it.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Verify identity is now visible.
+          security find-identity -p codesigning -v "$KEYCHAIN_PATH"
+
+          # Wipe the raw .p12 from disk — it lived in $RUNNER_TEMP only as
+          # long as `security import` needed it.
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+          # Export the keychain path so subsequent steps can reference it.
+          echo "BUILD_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: build signed .app bundle
+        env:
+          PROFILE: release
+          SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_IDENTITY }}
         run: ./scripts/build-app-bundle.sh
 
-      # Resolve the version string once into an env var so we don't reference
-      # ${{ github.ref_name }} repeatedly across `run:` steps (defensive: tag
-      # names are constrained, but env-passing is the documented safe pattern).
       - name: resolve version
         id: ver
         env:
           RAW_REF: ${{ github.event.inputs.ref || github.ref_name }}
         run: |
-          # Strip refs/tags/ prefix if present (workflow_dispatch might pass v0.1.0 directly).
           version="${RAW_REF#refs/tags/}"
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      # ─────────────────────────────────────────────────────────────────────
+      # Notarize: zip the signed .app, submit to Apple's notary service,
+      # wait for the verdict, staple the ticket onto the .app so it works
+      # offline.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: notarize
+        env:
+          API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          # Decode the .p8 to a runner-temp path.
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+
+          # Create the zip notarytool wants (preserves Mach-O signatures
+          # better than `zip`).
+          ditto -c -k --keepParent target/bundle/OpenLid.app target/bundle/OpenLid-notarize.zip
+
+          # Submit and wait. notarytool exits non-zero if the verdict isn't
+          # Accepted, which fails the job.
+          xcrun notarytool submit target/bundle/OpenLid-notarize.zip \
+              --key "$KEY_PATH" \
+              --key-id "$API_KEY_ID" \
+              --issuer "$API_ISSUER_ID" \
+              --wait
+
+          # Staple the notarization ticket so Gatekeeper can validate offline.
+          xcrun stapler staple target/bundle/OpenLid.app
+
+          # Final verification: Gatekeeper-level check that matches what a
+          # downloader's Mac will do.
+          spctl -a -vvv -t install target/bundle/OpenLid.app
+
+          # Wipe the API key from disk.
+          rm -f "$KEY_PATH"
 
       - name: create DMG
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # Stage the .app in an empty folder so create-dmg only shows the app.
           mkdir -p dmg-stage
           cp -R target/bundle/OpenLid.app dmg-stage/
           create-dmg \
@@ -65,6 +145,34 @@ jobs:
             "OpenLid-${VERSION}.dmg" \
             dmg-stage/
 
+      # Sign + notarize the DMG itself too. The .app is already notarized
+      # and stapled (so individual launches work offline); signing the DMG
+      # gives a friendlier first-download experience and lets stapler
+      # attach the ticket to the DMG container.
+      - name: sign and notarize DMG
+        env:
+          API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_IDENTITY }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "OpenLid-${VERSION}.dmg"
+
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$API_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+
+          xcrun notarytool submit "OpenLid-${VERSION}.dmg" \
+              --key "$KEY_PATH" \
+              --key-id "$API_KEY_ID" \
+              --issuer "$API_ISSUER_ID" \
+              --wait
+
+          xcrun stapler staple "OpenLid-${VERSION}.dmg"
+          spctl -a -vvv -t open --context context:primary-signature "OpenLid-${VERSION}.dmg"
+
+          rm -f "$KEY_PATH"
+
       - name: generate SHA-256 checksum
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -76,16 +184,11 @@ jobs:
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # Find the section matching this version. The CHANGELOG format is:
-          #   ## [0.1.0] - 2026-05-12
-          # so we strip a leading `v` from the tag name and grep between
-          # consecutive `## [` headers.
           plain="${VERSION#v}"
           awk -v ver="$plain" '
             $0 ~ "^## \\[" { in_section = (index($0, "[" ver "]") > 0); next }
             in_section { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
-          # If we got nothing (CHANGELOG not updated yet), fall back to a stub.
           if [ ! -s RELEASE_NOTES.md ]; then
             printf 'Release %s\n\nSee [CHANGELOG.md](CHANGELOG.md) for details.\n' "$VERSION" > RELEASE_NOTES.md
           fi
@@ -95,8 +198,6 @@ jobs:
       - name: publish draft release
         uses: softprops/action-gh-release@v3
         with:
-          # tag_name defaults to github.ref for tag pushes; for manual dispatch
-          # we set it from the user-supplied ref.
           tag_name: ${{ steps.ver.outputs.version }}
           name: ${{ steps.ver.outputs.version }}
           body_path: RELEASE_NOTES.md
@@ -104,3 +205,10 @@ jobs:
           files: |
             OpenLid-*.dmg
             OpenLid-*.dmg.sha256
+
+      - name: clean up keychain
+        if: always()
+        run: |
+          if [ -n "${BUILD_KEYCHAIN:-}" ]; then
+              security delete-keychain "$BUILD_KEYCHAIN" || true
+          fi
