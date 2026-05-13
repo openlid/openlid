@@ -11,6 +11,7 @@
 .claude/
 .cursor/
 .vscode/
+.mcp.json
 
 # Build artifacts
 *.app/

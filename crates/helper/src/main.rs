@@ -26,34 +26,40 @@ const HELPER_MACH_SERVICE_NAME: &str = "io.openlid.helper";
 // this string (via SecRequirementCreateWithString + SecCodeCheckValidity).
 // A mismatch causes the connection to be rejected silently.
 //
-// Two profiles are available; only one should be active at a time. The
-// default is DEV until you have an Apple Developer Program membership and
-// know your Team ID, at which point you switch to PROD.
+// At build time, set OPEN_LID_HELPER_PROFILE=dev (the build-app-bundle.sh
+// default for ad-hoc-signed local development builds) or
+// OPEN_LID_HELPER_PROFILE=prod (the release-workflow default for signed
+// builds). Unset defaults to prod — fail-safe: a misconfigured build is
+// strict, not permissive.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// DEV — permissive. Only requires that the caller claim bundle identifier
 /// `io.openlid.app`. Ad-hoc-signed local builds satisfy this. NEVER ship a
 /// distributed build with DEV active — any locally compiled "io.openlid.app"
 /// could control your root daemon.
-#[allow(dead_code)]
 const DEV_REQUIREMENT: &str = r#"identifier "io.openlid.app""#;
 
 /// PROD — pins to bundle id + Apple-issued Developer ID Application cert
-/// chain + your specific Team ID. To activate:
-///   1. Replace `TEAMID` below with your actual 10-character Team ID
-///      (e.g., `ABCD123456`). You can find it at
-///      https://developer.apple.com/account → Membership → Team ID.
-///   2. Decide whether you want notarization to be required (see below).
-///   3. Switch the `validator = …` line further down to use PROD_REQUIREMENT.
+/// chain + the project's Team ID (`X5SZL4562S`).
 ///
-/// The certificate field OIDs in this string are Apple-assigned:
+/// The certificate field OIDs are Apple-assigned:
 ///   • `1.2.840.113635.100.6.2.6`  — "Developer ID" intermediate CA
 ///   • `1.2.840.113635.100.6.1.13` — "Developer ID Application" leaf cert
 ///
 /// Together they mean: "the binary must be signed by a Developer ID
-/// Application certificate issued under Apple's Developer ID CA to my team."
-#[allow(dead_code)]
-const PROD_REQUIREMENT: &str = r#"identifier "io.openlid.app" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "TEAMID""#;
+/// Application certificate issued under Apple's Developer ID CA to this team."
+const PROD_REQUIREMENT: &str = r#"identifier "io.openlid.app" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "X5SZL4562S""#;
+
+/// Selects DEV vs PROD requirement at build time. `OPEN_LID_HELPER_PROFILE`
+/// is read by `build.rs` and turned into a `cfg(helper_profile_dev)` flag
+/// the helper checks here.
+fn active_requirement() -> &'static str {
+    if cfg!(helper_profile_dev) {
+        DEV_REQUIREMENT
+    } else {
+        PROD_REQUIREMENT
+    }
+}
 
 fn main() -> Result<()> {
     setup_logging()?;
@@ -62,7 +68,16 @@ fn main() -> Result<()> {
 
     let pmset = Arc::new(pmset::RealPmset);
     let marker = Arc::new(ownership_marker::OwnershipMarker::new());
-    let validator = Arc::new(client_validator::ClientValidator::new(DEV_REQUIREMENT));
+    let requirement = active_requirement();
+    tracing::info!(
+        "open-lid-helper using {} code-requirement profile",
+        if cfg!(helper_profile_dev) {
+            "DEV (permissive — local builds only)"
+        } else {
+            "PROD (Developer ID + Team ID pinned)"
+        }
+    );
+    let validator = Arc::new(client_validator::ClientValidator::new(requirement));
     let idle_exit = idle_exit::IdleExit::new();
 
     // Stale-state recovery: if the marker is present at startup, the previous

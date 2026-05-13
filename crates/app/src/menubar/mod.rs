@@ -47,6 +47,13 @@ pub fn run() -> Result<()> {
     let app = NSApplication::sharedApplication(mtm);
     app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
 
+    // Helper auto-registration via SMAppService. Best-effort: failure here
+    // is user-actionable (e.g., the .app isn't in /Applications, or the
+    // build wasn't signed with a Developer ID), but the menubar should
+    // still launch so the user can see the status menu. The XPC client's
+    // panic-guard ensures we degrade gracefully if the helper isn't reachable.
+    try_register_helper();
+
     // Platform impls.
     let lid = Arc::new(MacLidMonitor::start()?);
     let ps = Arc::new(MacPowerSourceMonitor::start()?);
@@ -122,6 +129,64 @@ pub fn run() -> Result<()> {
 /// returned spurious failures when the socket path contained spaces
 /// (e.g. "Application Support"); a raw UNIX-domain connect matches what
 /// `nc -U "$SOCK"` does and behaves predictably.
+/// Best-effort SMAppService daemon registration. Called at menubar startup
+/// so the helper is wired into launchd before the first XPC call. Logs
+/// outcomes but never fails the launch — the user-facing path through the
+/// preferences window can re-trigger registration if needed.
+fn try_register_helper() {
+    use crate::helper_installer::{self, HelperServiceStatus};
+
+    match helper_installer::status() {
+        Ok(HelperServiceStatus::Enabled) => {
+            tracing::info!("helper SMAppService: already enabled");
+            return;
+        }
+        Ok(HelperServiceStatus::RequiresApproval) => {
+            tracing::info!(
+                "helper SMAppService: registered but requires approval in System Settings"
+            );
+            return;
+        }
+        Ok(HelperServiceStatus::NotFound) => {
+            tracing::warn!(
+                "helper SMAppService: plist not found — verify OpenLid.app is in /Applications \
+                 and Contents/Library/LaunchDaemons/io.openlid.helper.plist is present"
+            );
+            return;
+        }
+        Ok(HelperServiceStatus::NotRegistered) => {
+            // Continue to register below.
+        }
+        Ok(HelperServiceStatus::Unknown(raw)) => {
+            tracing::warn!("helper SMAppService: unknown status {raw}; attempting register");
+        }
+        Err(e) => {
+            tracing::warn!("helper SMAppService status check failed: {e:#}");
+            return;
+        }
+    }
+
+    match helper_installer::register() {
+        Ok(()) => match helper_installer::status() {
+            Ok(HelperServiceStatus::Enabled) => {
+                tracing::info!("helper SMAppService: registered and enabled");
+            }
+            Ok(HelperServiceStatus::RequiresApproval) => {
+                tracing::info!(
+                    "helper SMAppService: registered; user approval required in System Settings"
+                );
+            }
+            Ok(other) => {
+                tracing::warn!(
+                    "helper SMAppService: registered but unexpected status {other:?}"
+                );
+            }
+            Err(e) => tracing::warn!("helper SMAppService: post-register status check failed: {e:#}"),
+        },
+        Err(e) => tracing::warn!("helper SMAppService register failed: {e:#}"),
+    }
+}
+
 fn another_instance_running() -> bool {
     use std::os::unix::net::UnixStream;
     use std::time::Duration;

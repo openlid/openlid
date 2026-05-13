@@ -5,15 +5,26 @@
     <key>Label</key>
     <string>io.openlid.helper</string>
 
-    <key>ProgramArguments</key>
-    <array>
-        <string>__OPEN_LID_HELPER_PATH__</string>
-    </array>
+    <!--
+        BundleProgram is resolved by launchd relative to the .app bundle
+        root. SMAppService uses this when the user enables Open-Lid in
+        System Settings → Login Items → Allow in the Background.
+
+        For dev installs (scripts/dev-install-helper.sh), this plist is
+        rewritten to use ProgramArguments with an absolute path.
+    -->
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/open-lid-helper</string>
 
     <key>MachServices</key>
     <dict>
         <key>io.openlid.helper</key>
         <true/>
     </dict>
+
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>io.openlid.app</string>
+    </array>
 </dict>
 </plist>

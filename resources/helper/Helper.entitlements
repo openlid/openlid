@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        The helper runs as root via launchd; entitlements here harden the
+        executable at the runtime level. No special grants needed: the
+        helper executes `pmset` via std::process::Command (a regular
+        fork+exec) and listens on a Mach service granted by launchd.
+    -->
+</dict>
+</plist>
