@@ -24,6 +24,7 @@ pub struct PrefsPatch {
     pub activate_at_launch: Option<bool>,
     pub default_duration_minutes: Option<Option<u32>>,
     pub battery_threshold_pct: Option<Option<u8>>,
+    pub prevent_display_sleep: Option<bool>,
 }
 
 /// Notification fired whenever any state-affecting field changes. Listeners
@@ -42,6 +43,13 @@ where
 {
     pub state: Arc<Mutex<AppState>>,
     last_applied: Arc<Mutex<bool>>,
+    /// Tracks whether the display-sleep assertion is currently held, so
+    /// reconcile() can skip a redundant FFI call when nothing changed. The
+    /// underlying `prevent_display_sleep`/`allow_display_sleep` methods are
+    /// already idempotent — this cache is purely a noise-reduction layer
+    /// that keeps log lines down and matches the `last_applied` pattern
+    /// used for system-sleep reconciliation.
+    last_assertion_held: Arc<Mutex<bool>>,
     config: Mutex<Config>,
     power: Arc<P>,
     display: Arc<D>,
@@ -90,6 +98,7 @@ where
         let rt = Arc::new(Self {
             state: Arc::new(Mutex::new(state)),
             last_applied: Arc::new(Mutex::new(false)),
+            last_assertion_held: Arc::new(Mutex::new(false)),
             config: Mutex::new(cfg),
             power,
             display,
@@ -198,6 +207,9 @@ where
                 // Propagate to the modifier the decision function reads.
                 self.state.lock().unwrap().modifiers.min_battery = v;
             }
+            if let Some(v) = patch.prevent_display_sleep {
+                cfg.prevent_display_sleep = v;
+            }
         }
 
         // Persist the new config + reconcile the helper *first*, so even if
@@ -238,6 +250,7 @@ where
             activate_at_launch: cfg.activate_at_launch,
             default_duration_minutes: cfg.default_duration_minutes,
             battery_threshold_pct: cfg.battery_threshold_pct,
+            prevent_display_sleep: cfg.prevent_display_sleep,
         }
     }
 
@@ -308,6 +321,23 @@ where
         Ok(())
     }
 
+    /// Release runtime side-effects (helper sleep prevention + display
+    /// IOPMAssertion) without mutating `AppState` or persisting to disk.
+    /// Used by the quit handler so quitting the app does NOT silently
+    /// overwrite the user's `enabled` toggle. The assertion is also
+    /// released by macOS automatically on process exit; doing it
+    /// explicitly here just keeps `pmset -g assertions` and
+    /// `pmset -g | grep SleepDisabled` clean immediately instead of
+    /// waiting for the helper's 15-second idle-exit.
+    pub fn shutdown_cleanup(&self) {
+        if let Err(e) = self.power.allow_sleep() {
+            tracing::warn!("shutdown_cleanup: allow_sleep failed: {e:#}");
+        }
+        if let Err(e) = self.display.allow_display_sleep() {
+            tracing::warn!("shutdown_cleanup: allow_display_sleep failed: {e:#}");
+        }
+    }
+
     fn reconcile(&self) {
         // Check for expired timer first
         let timer_expired = {
@@ -321,26 +351,59 @@ where
             s.until = None;
         }
 
-        let desired = {
+        let (desired, lid_open) = {
             let s = self.state.lock().unwrap();
-            should_prevent_sleep(&s, Local::now())
+            (
+                should_prevent_sleep(&s, Local::now()),
+                s.lid == LidState::Open,
+            )
         };
-        let mut last = self.last_applied.lock().unwrap();
-        if *last == desired {
-            return;
-        }
-        let r = if desired {
-            self.power.prevent_sleep()
-        } else {
-            self.power.allow_sleep()
-        };
-        match r {
-            Ok(()) => {
-                tracing::info!("reconcile: prevent_sleep = {desired}");
-                *last = desired;
+
+        // (1) System-sleep prevention via the helper. Same as before.
+        {
+            let mut last = self.last_applied.lock().unwrap();
+            if *last != desired {
+                let r = if desired {
+                    self.power.prevent_sleep()
+                } else {
+                    self.power.allow_sleep()
+                };
+                match r {
+                    Ok(()) => {
+                        tracing::info!("reconcile: prevent_sleep = {desired}");
+                        *last = desired;
+                    }
+                    Err(e) => {
+                        tracing::error!("reconcile failed: {e}");
+                    }
+                }
             }
-            Err(e) => {
-                tracing::error!("reconcile failed: {e}");
+        }
+
+        // (2) Display-sleep prevention via IOPMAssertion. Option-B condition:
+        // hold the assertion only while we're preventing sleep, the user
+        // hasn't opted out, AND there's actually a display worth keeping
+        // awake — i.e. the lid is open, or an external display is attached.
+        // When the lid closes with no external display, releasing the
+        // assertion lets the `force_display_sleep` branch in `on_lid_change`
+        // do its battery-saving job uncontested.
+        let pref = self.config.lock().unwrap().prevent_display_sleep;
+        let want_assertion = desired && pref && (lid_open || self.display.has_external_display());
+        let mut last_assert = self.last_assertion_held.lock().unwrap();
+        if *last_assert != want_assertion {
+            let r = if want_assertion {
+                self.display.prevent_display_sleep()
+            } else {
+                self.display.allow_display_sleep()
+            };
+            match r {
+                Ok(()) => {
+                    tracing::info!("reconcile: display_assertion_held = {want_assertion}");
+                    *last_assert = want_assertion;
+                }
+                Err(e) => {
+                    tracing::error!("display-assertion reconcile failed: {e}");
+                }
             }
         }
     }
@@ -377,6 +440,15 @@ mod tests {
             Self {
                 state: Mutex::new(s),
                 cb: Mutex::new(None),
+            }
+        }
+        /// Simulate a lid-state change by invoking the stored callback, the
+        /// same way the real IOKit clamshell observer does.
+        fn fire(&self, new: LidState) {
+            *self.state.lock().unwrap() = new;
+            let guard = self.cb.lock().unwrap();
+            if let Some(cb) = guard.as_ref() {
+                cb(new);
             }
         }
     }
@@ -417,6 +489,13 @@ mod tests {
     struct MockDisplay {
         external: AtomicBool,
         sleep_calls: AtomicU32,
+        // Assertion-lifecycle bookkeeping. `held` reflects the current state
+        // as the runtime believes it; the two counters give tests a way to
+        // assert how many transitions happened, separately from the final
+        // state.
+        held: AtomicBool,
+        acquire_calls: AtomicU32,
+        release_calls: AtomicU32,
     }
     impl DisplayController for MockDisplay {
         fn has_external_display(&self) -> bool {
@@ -424,6 +503,16 @@ mod tests {
         }
         fn force_display_sleep(&self) -> Result<(), PlatformError> {
             self.sleep_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        fn prevent_display_sleep(&self) -> Result<(), PlatformError> {
+            self.acquire_calls.fetch_add(1, Ordering::SeqCst);
+            self.held.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+        fn allow_display_sleep(&self) -> Result<(), PlatformError> {
+            self.release_calls.fetch_add(1, Ordering::SeqCst);
+            self.held.store(false, Ordering::SeqCst);
             Ok(())
         }
     }
@@ -743,5 +832,193 @@ mod tests {
         })
         .unwrap();
         assert!(!rt.snapshot().activate_at_launch);
+    }
+
+    // --- display-sleep assertion (Option B) --------------------------------
+
+    /// Like `fresh_runtime`, but also returns the lid so tests can fire
+    /// lid-change events. Default lid state is Open.
+    fn fresh_runtime_with_lid() -> (
+        TestRt,
+        Arc<MockPower>,
+        Arc<MockLid>,
+        Arc<MockPs>,
+        Arc<MockDisplay>,
+        tempfile::TempDir,
+    ) {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let power = Arc::new(MockPower::default());
+        let lid = Arc::new(MockLid::new(LidState::Open));
+        let ps = Arc::new(MockPs::default());
+        let disp = Arc::new(MockDisplay::default());
+        let rt =
+            StateRuntime::new(power.clone(), lid.clone(), ps.clone(), disp.clone(), cfg).unwrap();
+        (rt, power, lid, ps, disp, dir)
+    }
+
+    #[test]
+    fn enabling_acquires_display_assertion_by_default() {
+        // Default config has prevent_display_sleep=true and the fixture
+        // starts with lid open / no external display. Enabling sleep
+        // prevention must therefore acquire the display assertion exactly
+        // once.
+        let (rt, _power, _lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        rt.set_enabled(true, None).unwrap();
+        assert!(disp.held.load(Ordering::SeqCst));
+        assert_eq!(disp.acquire_calls.load(Ordering::SeqCst), 1);
+        // Idempotent: re-enabling does not re-acquire.
+        rt.set_enabled(true, None).unwrap();
+        assert_eq!(disp.acquire_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn disabling_releases_display_assertion() {
+        let (rt, _power, _lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        rt.set_enabled(true, None).unwrap();
+        assert!(disp.held.load(Ordering::SeqCst));
+        rt.set_enabled(false, None).unwrap();
+        assert!(!disp.held.load(Ordering::SeqCst));
+        assert_eq!(disp.release_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn closing_lid_with_no_external_display_releases_assertion() {
+        // Per Option B, closing the lid while no external display is
+        // attached releases the assertion so that on_lid_change's
+        // force_display_sleep call lands uncontested. Re-opening must
+        // re-acquire.
+        let (rt, _power, lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        rt.set_enabled(true, None).unwrap();
+        assert!(disp.held.load(Ordering::SeqCst));
+
+        lid.fire(LidState::Closed);
+        assert!(
+            !disp.held.load(Ordering::SeqCst),
+            "lid closed, no external display => assertion must be released"
+        );
+
+        lid.fire(LidState::Open);
+        assert!(
+            disp.held.load(Ordering::SeqCst),
+            "lid re-opened => assertion must be re-acquired"
+        );
+        // We should have seen exactly two acquires and one release.
+        assert_eq!(disp.acquire_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(disp.release_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn closing_lid_with_external_display_keeps_assertion_held() {
+        // External display present: closing the lid must NOT release the
+        // assertion — the external display still needs to stay awake.
+        let (rt, _power, lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        disp.external.store(true, Ordering::SeqCst);
+        rt.set_enabled(true, None).unwrap();
+        assert!(disp.held.load(Ordering::SeqCst));
+
+        lid.fire(LidState::Closed);
+        assert!(
+            disp.held.load(Ordering::SeqCst),
+            "external display attached => assertion stays held when lid closes"
+        );
+        assert_eq!(disp.release_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn opt_out_means_no_assertion_even_when_enabled() {
+        // Users who want the screen to lock on idle set
+        // prevent_display_sleep=false. The runtime must respect this and
+        // skip the assertion entirely, even though system-sleep prevention
+        // is still on.
+        let (rt, power, _lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        rt.set_preferences(PrefsPatch {
+            prevent_display_sleep: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+        rt.set_enabled(true, None).unwrap();
+        assert!(rt.snapshot().preventing_sleep_now);
+        assert_eq!(power.prevent_calls.load(Ordering::SeqCst), 1);
+        assert!(!disp.held.load(Ordering::SeqCst));
+        assert_eq!(disp.acquire_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn flipping_opt_out_to_true_acquires_assertion_immediately() {
+        // Re-enabling the preference while already-enabled must take effect
+        // without requiring the user to toggle the main switch.
+        let (rt, _power, _lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        rt.set_preferences(PrefsPatch {
+            prevent_display_sleep: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+        rt.set_enabled(true, None).unwrap();
+        assert!(!disp.held.load(Ordering::SeqCst));
+        rt.set_preferences(PrefsPatch {
+            prevent_display_sleep: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(disp.held.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn shutdown_cleanup_releases_runtime_resources_but_preserves_persisted_enabled() {
+        // Regression for the quit-bug: the menubar Quit handler used to
+        // call `set_enabled(false, None)` to release the helper, but that
+        // also persisted `enabled = false` to disk — so every relaunch
+        // came up as Off, silently overwriting the user's last toggle.
+        // The replacement `shutdown_cleanup` must release the runtime
+        // side-effects WITHOUT touching state or disk.
+        let (rt, power, _lid, _ps, disp, dir) = fresh_runtime_with_lid();
+        let cfg_path = dir.path().join("config.toml");
+
+        rt.set_enabled(true, None).unwrap();
+        assert!(disp.held.load(Ordering::SeqCst));
+        assert!(
+            open_lid_core::config::Config::load(&cfg_path)
+                .unwrap()
+                .enabled,
+            "precondition: set_enabled(true) should persist enabled = true"
+        );
+
+        rt.shutdown_cleanup();
+
+        // Runtime side-effects released.
+        assert!(power.allow_calls.load(Ordering::SeqCst) >= 1);
+        assert!(disp.release_calls.load(Ordering::SeqCst) >= 1);
+        assert!(!disp.held.load(Ordering::SeqCst));
+
+        // But the persisted toggle survives, so the next launch's
+        // "restore last state" comes up as On — which is what the user
+        // had configured.
+        assert!(
+            open_lid_core::config::Config::load(&cfg_path)
+                .unwrap()
+                .enabled,
+            "shutdown_cleanup must not flip persisted enabled"
+        );
+        assert!(
+            rt.snapshot().enabled,
+            "shutdown_cleanup must not flip in-memory enabled either"
+        );
+    }
+
+    #[test]
+    fn lid_closes_with_no_external_display_still_forces_display_sleep() {
+        // Sanity guard: regardless of the new assertion machinery, the
+        // original Open-Lid value-prop of force-display-sleep on lid close
+        // (with no external display) must still fire. This is the behavior
+        // the user explicitly asked us to preserve.
+        let (rt, _power, lid, _ps, disp, _dir) = fresh_runtime_with_lid();
+        rt.set_enabled(true, None).unwrap();
+        lid.fire(LidState::Closed);
+        assert_eq!(
+            disp.sleep_calls.load(Ordering::SeqCst),
+            1,
+            "force_display_sleep should fire on lid-close without external display"
+        );
     }
 }

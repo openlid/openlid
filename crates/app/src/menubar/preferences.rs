@@ -39,6 +39,7 @@ pub trait PrefsActions: Send + Sync {
     fn set_activate_at_launch(&self, enabled: bool);
     fn set_default_duration(&self, minutes: Option<u32>);
     fn set_battery_threshold(&self, pct: Option<u8>);
+    fn set_prevent_display_sleep(&self, enabled: bool);
 }
 
 /// Default battery-threshold value shown in the disabled numeric field when
@@ -71,6 +72,7 @@ const DURATION_ENTRIES: &[(&str, isize)] = &[
 struct PrefsControls {
     start_at_login: Retained<NSButton>,
     activate_at_launch: Retained<NSButton>,
+    prevent_display_sleep: Retained<NSButton>,
     duration_popup: Retained<NSPopUpButton>,
     battery_checkbox: Retained<NSButton>,
     battery_field: Retained<NSTextField>,
@@ -117,6 +119,15 @@ define_class!(
             let state = checkbox_state(sender);
             if let Some(actions) = self.ivars().actions.get() {
                 actions.set_activate_at_launch(state);
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(setPreventDisplaySleep:))]
+        fn set_prevent_display_sleep(&self, sender: Option<&AnyObject>) {
+            let state = checkbox_state(sender);
+            if let Some(actions) = self.ivars().actions.get() {
+                actions.set_prevent_display_sleep(state);
             }
         }
 
@@ -232,7 +243,7 @@ impl PreferencesWindow {
     pub fn new(mtm: MainThreadMarker, actions: Arc<dyn PrefsActions>) -> Self {
         // Frame is in screen coordinates at construction time; `center()`
         // is called on each show so the origin here is irrelevant.
-        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 320.0));
+        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 360.0));
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable;
@@ -259,12 +270,13 @@ impl PreferencesWindow {
         // Build controls. Coordinates are in the content view's coordinate
         // system (origin = bottom-left, y grows upward).
         //
-        // Layout sketch (480 wide, 320 tall content):
-        //   y=260: header text (multi-line)
-        //   y=170: "Start Open-Lid at login"
-        //   y=140: "Activate Open-Lid at launch"
-        //   y=100: "Default duration:"  [popup]
-        //   y= 60: "Turn off when battery is below" [field] %
+        // Layout sketch (480 wide, 360 tall content):
+        //   y=270: header text (multi-line, 70 tall)
+        //   y=240: "Start Open-Lid at login"
+        //   y=210: "Activate Open-Lid at launch"
+        //   y=180: "Keep display awake while preventing sleep"
+        //   y=130: "Default duration:"  [popup]
+        //   y= 90: "Turn off when battery is below" [field] %
         //   y= 16: [Close] (right-aligned)
         let content_view = window
             .contentView()
@@ -276,7 +288,7 @@ impl PreferencesWindow {
         );
         let header = NSTextField::wrappingLabelWithString(header_text, mtm);
         header.setFrame(NSRect::new(
-            NSPoint::new(20.0, 230.0),
+            NSPoint::new(20.0, 270.0),
             NSSize::new(440.0, 70.0),
         ));
         content_view.addSubview(&header);
@@ -293,7 +305,7 @@ impl PreferencesWindow {
             )
         };
         start_at_login.setFrame(NSRect::new(
-            NSPoint::new(20.0, 200.0),
+            NSPoint::new(20.0, 240.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&start_at_login);
@@ -308,10 +320,27 @@ impl PreferencesWindow {
             )
         };
         activate_at_launch.setFrame(NSRect::new(
-            NSPoint::new(20.0, 170.0),
+            NSPoint::new(20.0, 210.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&activate_at_launch);
+
+        // Checkbox: Keep display awake while preventing sleep.
+        // Default is on; users who actually want their screen to lock on
+        // idle (e.g., for shoulder-surfing reasons) can turn it off.
+        let prevent_display_sleep = unsafe {
+            NSButton::checkboxWithTitle_target_action(
+                ns_string!("Keep display awake while preventing sleep"),
+                Some(handler_obj),
+                Some(sel!(setPreventDisplaySleep:)),
+                mtm,
+            )
+        };
+        prevent_display_sleep.setFrame(NSRect::new(
+            NSPoint::new(20.0, 180.0),
+            NSSize::new(440.0, 20.0),
+        ));
+        content_view.addSubview(&prevent_display_sleep);
 
         // Label + popup: Default duration.
         let duration_label = NSTextField::labelWithString(ns_string!("Default duration:"), mtm);
@@ -392,6 +421,7 @@ impl PreferencesWindow {
         let controls = Arc::new(PrefsControls {
             start_at_login,
             activate_at_launch,
+            prevent_display_sleep,
             duration_popup,
             battery_checkbox,
             battery_field,
@@ -436,6 +466,9 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
     controls
         .activate_at_launch
         .setState(flag(snap.activate_at_launch));
+    controls
+        .prevent_display_sleep
+        .setState(flag(snap.prevent_display_sleep));
 
     // Default duration: select the matching tag, falling back to 0 = "Indefinitely".
     let target_tag: isize = snap
