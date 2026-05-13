@@ -1,6 +1,7 @@
 mod cli;
 mod control_server;
 mod helper_client;
+mod helper_installer;
 mod launch_at_login;
 mod main_thread;
 mod menubar;

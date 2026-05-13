@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Open-Lid uses Developer ID distribution (not Mac App Store), so the
+        app sandbox is *not* enabled. Hardened runtime is enabled via the
+        codesign `--options=runtime` flag at signing time.
+
+        No special entitlements needed beyond hardened runtime: the app
+        doesn't use JIT, doesn't load unsigned libraries, doesn't need
+        external entitlement grants. NSXPC to the helper, IOKit lid
+        monitoring, AppKit UI, and Unix sockets all work in the default
+        hardened-runtime sandbox.
+    -->
+</dict>
+</plist>
