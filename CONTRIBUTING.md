@@ -16,7 +16,7 @@ maintained in spare time, so I appreciate every issue, PR, and question.
 
 ```bash
 # Prerequisites: macOS 13+ on Apple Silicon, Rust 1.81+, Xcode CLT installed.
-git clone https://github.com/diyanbogdanov/open-lid.git
+git clone https://github.com/openlid/open-lid.git
 cd open-lid
 cargo build --workspace
 cargo test --workspace
@@ -150,7 +150,7 @@ In your PR description:
 
 ## Reporting issues
 
-Open a [new issue](https://github.com/diyanbogdanov/open-lid/issues/new/choose).
+Open a [new issue](https://github.com/openlid/open-lid/issues/new/choose).
 There are templates for bugs and feature requests. The bug template asks
 for:
 

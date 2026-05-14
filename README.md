@@ -6,12 +6,12 @@
 
 **Keep your Mac awake — even with the lid closed.**
 
-[![CI](https://github.com/diyanbogdanov/open-lid/actions/workflows/ci.yml/badge.svg)](https://github.com/diyanbogdanov/open-lid/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/diyanbogdanov/open-lid/branch/main/graph/badge.svg)](https://codecov.io/gh/diyanbogdanov/open-lid)
+[![CI](https://github.com/openlid/open-lid/actions/workflows/ci.yml/badge.svg)](https://github.com/openlid/open-lid/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/openlid/open-lid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/open-lid)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/diyanbogdanov/open-lid)](https://github.com/diyanbogdanov/open-lid/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/diyanbogdanov/open-lid/total)](https://github.com/diyanbogdanov/open-lid/releases)
-[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg?logo=apple)](https://github.com/diyanbogdanov/open-lid)
+[![GitHub release](https://img.shields.io/github/v/release/openlid/open-lid)](https://github.com/openlid/open-lid/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/openlid/open-lid/total)](https://github.com/openlid/open-lid/releases)
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg?logo=apple)](https://github.com/openlid/open-lid)
 
 </div>
 
@@ -87,10 +87,10 @@ battery gets low.
 
 ```bash
 # Homebrew tap:
-brew install --cask diyanbogdanov/tap/open-lid
+brew install --cask openlid/tap/open-lid
 
 # Or download the DMG directly:
-# https://github.com/diyanbogdanov/open-lid/releases/latest
+# https://github.com/openlid/open-lid/releases/latest
 ```
 
 After installing, launch Open-Lid; macOS will prompt you to enable it in
@@ -103,7 +103,7 @@ Prerequisites: macOS 13+ on Apple Silicon, Rust 1.88+, Xcode Command Line
 Tools.
 
 ```bash
-git clone https://github.com/diyanbogdanov/open-lid.git
+git clone https://github.com/openlid/open-lid.git
 cd open-lid
 
 # Build (ad-hoc-signed, dev profile), install into /Applications, refresh caches:

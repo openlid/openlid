@@ -643,7 +643,7 @@ cargo xtask release       → bundle → sign → notarize → dmg in one shot
 ### Distribution channels
 
 1. **GitHub Releases:** notarized DMG attached to each `vX.Y.Z` tag.
-2. **Homebrew tap:** `brew install --cask diyanbogdanov/open-lid/open-lid` (cask formula maintained in a sibling repo).
+2. **Homebrew tap:** `brew install --cask openlid/open-lid/open-lid` (cask formula maintained in a sibling repo).
 3. **README install instructions:** drag-to-Applications + first-launch approval steps.
 
 ---
