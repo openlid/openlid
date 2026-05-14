@@ -8,6 +8,11 @@ on:
 
 permissions:
   contents: read
+  # Lets the runner mint short-lived OIDC tokens that Codecov verifies
+  # against GitHub's public keys. Replaces the need for a long-lived
+  # CODECOV_TOKEN secret — uploads authenticate per-job, scoped to the
+  # exact workflow + branch + commit.
+  id-token: write
 
 concurrency:
   group: coverage-${{ github.workflow }}-${{ github.ref }}
@@ -43,13 +48,17 @@ jobs:
           cargo llvm-cov --workspace --lcov --output-path lcov.info \
             --ignore-filename-regex 'crates/(app|helper)/src/(platform|menubar|helper_client|launch_at_login|main_thread|control_server)'
 
-      # CODECOV_TOKEN must be set in repo secrets:
-      #   Settings -> Secrets and variables -> Actions -> New repository secret
-      # Get the token from https://app.codecov.io/gh/openlid/open-lid/settings
-      # (after creating the Codecov account / linking the repo).
+      # Authenticate to Codecov via OIDC instead of a static token.
+      # Requires:
+      #   - `id-token: write` permission (set at the workflow level above).
+      #   - The Codecov GitHub App installed on this org (one-click op
+      #     during initial Codecov signup; already done).
+      # If OIDC ever stops working (Codecov-side outage, OIDC trust-config
+      # change, etc.), drop in `token: ${{ secrets.CODECOV_TOKEN }}` here
+      # — the action accepts either auth method.
       - name: upload to codecov
         uses: codecov/codecov-action@v6
         with:
           files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           fail_ci_if_error: false
