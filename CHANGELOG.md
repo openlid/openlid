@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-14
+
+The "stable API" release. The CLI, `config.toml` schema, and IPC wire shapes
+now ship under a binding semver promise — see
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). No new user-visible features
+versus v0.2.0; this is the moment those surfaces become a contract.
+
+### Changed
+
+- **Compatibility promise is binding.** Surfaces enumerated in
+  `docs/COMPATIBILITY.md` (CLI subcommands and flags, exit codes, the
+  `status --json` field set, `config.toml` field names, control-socket
+  request/response/snapshot shapes, helper XPC method signatures) are
+  locked under v1.x semver. Breaking changes require a v2.0 release.
+  Additive changes (new subcommands, new optional config fields, new
+  response variants) are explicitly allowed and do not constitute a break.
+
+### Removed
+
+- **Stub `uninstall` CLI subcommand** and its `ControlRequest::Uninstall`
+  wire variant. The stub printed a "coming in a future release" message
+  and never had a working implementation; locking it under semver would
+  have committed the project to either delivering it or carrying the
+  dead-letter wire variant forever. Removed entirely. Homebrew's
+  `brew uninstall --cask open-lid` (plus the standard
+  `~/Library/Application Support/io.openlid.open-lid` cleanup) remains
+  the supported uninstall path for cask installs; manual uninstall steps
+  are documented in the README.
+- **Internal `unregister()` helper** in the SMAppService installer module.
+  Its only documented caller was the stubbed uninstall command; with that
+  gone, the function had zero call sites.
+
+### Fixed
+
+- **Stale dev-process language** in code comments, `scripts/dev-install-helper.sh`,
+  and the manual test checklist (references to internal "Plan 1" / "Plan 2"
+  development phases that completed during the v0.1 → v0.2 cycle).
+  Rephrased to describe the actual user-visible behavior.
+- **`docs/manual-test-checklist.md` rewritten.** The previous version
+  referenced features that never shipped or were removed (the `Mode`
+  submenu, ghost CLI command `open-lid mode <name>`, eye-slash icon).
+  Replaced with a smoke checklist that matches what v1.0 actually ships.
+
 ## [0.2.0] - 2026-05-14
 
 The "signed and notarized" release. Downloaders no longer see an
@@ -123,6 +166,7 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/open-lid/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/openlid/open-lid/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/openlid/open-lid/releases/tag/v1.0.0
 [0.2.0]: https://github.com/openlid/open-lid/releases/tag/v0.2.0
 [0.1.0]: https://github.com/openlid/open-lid/releases/tag/v0.1.0

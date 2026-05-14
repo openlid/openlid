@@ -26,10 +26,12 @@ IOKit + AppKit + ServiceManagement; the Linux implementation (planned)
 will call logind via D-Bus.
 
 > [!NOTE]
-> **Status: pre-1.0.** macOS 13+ on Apple Silicon today. **Linux support
-> planned for v1.x; Windows depending on demand.** v0.2 on macOS ships
-> signed and notarized — no Gatekeeper warning. Helper installs
-> automatically via `SMAppService` — no `sudo` required.
+> **Status: v1.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
+> support planned for v1.x; Windows depending on demand.** Signed and
+> notarized — no Gatekeeper warning. Helper installs automatically via
+> `SMAppService` — no `sudo` required. CLI subcommands, `config.toml`
+> schema, and IPC wire shapes are locked under semver — see
+> [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ---
 
@@ -276,7 +278,7 @@ prevented; only the display-idle assertion is dropped.
 - [x] **v0.1 — Local MVP.** Menu bar app + CLI + preferences + helper.
 - [x] **v0.2 — Signed distribution.** Notarized DMG, Homebrew tap,
   `SMAppService` daemon registration replacing the manual `sudo` install.
-- [ ] **v1.0 — Stable API.** Locked CLI, `config.toml` schema, and IPC
+- [x] **v1.0 — Stable API.** Locked CLI, `config.toml` schema, and IPC
   surfaces under semver. Adds a `version` field to the config schema
   as a forward-compatibility hook for future v2.x. See
   [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
