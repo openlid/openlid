@@ -183,7 +183,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.81"
 license = "MIT"
-repository = "https://github.com/diyanbogdanov/open-lid"
+repository = "https://github.com/openlid/open-lid"
 
 [workspace.dependencies]
 # Internal

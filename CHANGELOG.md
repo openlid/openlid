@@ -122,6 +122,6 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/diyanbogdanov/open-lid/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/diyanbogdanov/open-lid/releases/tag/v0.2.0
-[0.1.0]: https://github.com/diyanbogdanov/open-lid/releases/tag/v0.1.0
+[Unreleased]: https://github.com/openlid/open-lid/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/openlid/open-lid/releases/tag/v0.2.0
+[0.1.0]: https://github.com/openlid/open-lid/releases/tag/v0.1.0

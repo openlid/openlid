@@ -79,7 +79,7 @@ body:
     attributes:
       label: Pre-submission checks
       options:
-        - label: I searched [existing issues](https://github.com/diyanbogdanov/open-lid/issues?q=is%3Aissue) for duplicates.
+        - label: I searched [existing issues](https://github.com/openlid/open-lid/issues?q=is%3Aissue) for duplicates.
           required: true
         - label: I'm running the latest released version (or HEAD).
           required: true

@@ -42,7 +42,7 @@ jobs:
 
       # CODECOV_TOKEN must be set in repo secrets:
       #   Settings -> Secrets and variables -> Actions -> New repository secret
-      # Get the token from https://app.codecov.io/gh/diyanbogdanov/open-lid/settings
+      # Get the token from https://app.codecov.io/gh/openlid/open-lid/settings
       # (after creating the Codecov account / linking the repo).
       - name: upload to codecov
         uses: codecov/codecov-action@v6
