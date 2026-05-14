@@ -86,10 +86,10 @@ battery gets low.
 ### Download the signed DMG (recommended)
 
 ```bash
-# Homebrew tap (once published):
+# Homebrew tap:
 brew install --cask diyanbogdanov/tap/open-lid
 
-# Or download directly:
+# Or download the DMG directly:
 # https://github.com/diyanbogdanov/open-lid/releases/latest
 ```
 
