@@ -15,7 +15,10 @@ maintained in spare time, so I appreciate every issue, PR, and question.
 ## Quick start for contributors
 
 ```bash
-# Prerequisites: macOS 13+ on Apple Silicon, Rust 1.81+, Xcode CLT installed.
+# Prerequisites: Rust 1.88+. To build/run the macOS backend you also need
+# macOS 13+ on Apple Silicon and Xcode CLT. `open-lid-core` (the pure-logic
+# crate) compiles on Linux and Windows too — no platform-specific toolchain
+# needed for working on the state machine, config, or IPC schemas.
 git clone https://github.com/openlid/open-lid.git
 cd open-lid
 cargo build --workspace
@@ -64,10 +67,12 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered design.
 
 ### Likely to be declined
 
-- **Cross-platform support contributions before the platform trait shape is
-  stabilized.** The codebase has trait stubs for non-macOS platforms, but
-  the abstraction isn't ready for real implementations yet — porting prematurely
-  will be wasted work.
+- **Linux/Windows backend implementations before v1.0 ships.** The
+  `open-lid-core` platform traits exist, but they'll get refined as the
+  macOS implementation matures toward v1.0. Backend contributions are
+  very welcome *after* v1.0 — please open an issue first describing
+  which OS, which APIs (logind/D-Bus, `SetThreadExecutionState`, etc.),
+  and what your testing setup looks like.
 - **Adding the ability to commercially resell Open-Lid as a different product.**
   Apache 2.0 permits this legally, but you don't need to ask me; just do it
   with proper attribution per the license terms.
