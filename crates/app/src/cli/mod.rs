@@ -32,8 +32,6 @@ pub enum Command {
     /// Config operations
     #[command(subcommand)]
     Config(ConfigArg),
-    /// Uninstall
-    Uninstall,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -54,6 +52,5 @@ pub fn run(args: Vec<String>) -> Result<()> {
         Command::For { duration } => commands::for_duration(&duration),
         Command::Until { time } => commands::until(&time),
         Command::Config(c) => commands::config(c),
-        Command::Uninstall => commands::uninstall(),
     }
 }

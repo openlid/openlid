@@ -31,7 +31,6 @@ pub enum ControlRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prevent_display_sleep: Option<bool>,
     },
-    Uninstall,
     Ping,
 }
 

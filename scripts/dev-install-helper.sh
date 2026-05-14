@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # scripts/dev-install-helper.sh
 # Manually install the helper to /Library/LaunchDaemons pointing at the
-# debug-built binary. Used during Plan 1 development before SMAppService
-# is wired up (Plan 2).
+# debug-built binary. Required for local development: an ad-hoc-signed
+# bundle (the `./scripts/install.sh` output) cannot use SMAppService,
+# so contributors install the helper this way. Production users get the
+# helper registered automatically by SMAppService on signed releases.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

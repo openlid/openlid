@@ -93,22 +93,6 @@ pub fn register() -> Result<()> {
     Err(unwrap_error(err_ptr, "register"))
 }
 
-/// Unregister the helper. Called from the uninstall path.
-#[allow(dead_code)] // Wired in the uninstall command (v0.2.x menu + CLI).
-pub fn unregister() -> Result<()> {
-    let service = daemon_service()?;
-    let mut err_ptr: *mut NSError = std::ptr::null_mut();
-    // SAFETY: -unregisterAndReturnError: is the documented SMAppService API.
-    let ok: objc2::runtime::Bool =
-        unsafe { msg_send![&*service, unregisterAndReturnError: &mut err_ptr] };
-
-    if ok.as_bool() {
-        tracing::info!("SMAppService daemon unregister: ok");
-        return Ok(());
-    }
-    Err(unwrap_error(err_ptr, "unregister"))
-}
-
 /// Read the current status. Cheap; safe to call frequently (e.g., on every
 /// status menu refresh) — macOS caches internally.
 pub fn status() -> Result<HelperServiceStatus> {

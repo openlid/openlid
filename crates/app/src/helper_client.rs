@@ -66,7 +66,7 @@ unsafe impl ManualBlockEncoding for ReplyOkErr {
 
 /// `void (^)(BOOL ok, BOOL active, NSString * _Nullable error)` — reply for
 /// `getSleepPreventionStatusWithReply:`. Used by `HelperClient::get_status`,
-/// which the menubar does not yet call (Plan 2 will).
+/// reserved for a future helper-health refactor.
 #[allow(dead_code)]
 struct ReplyOkActiveErr;
 // SAFETY: argument tuple matches `(BOOL, BOOL, NSString*)` and return is void.
@@ -77,7 +77,8 @@ unsafe impl ManualBlockEncoding for ReplyOkActiveErr {
 }
 
 /// `void (^)(void)` — reply for `pingWithReply:`. Used by `HelperClient::ping`,
-/// reserved for Plan 2's health check (the MVP doesn't ping explicitly).
+/// reserved for a future helper-health check (the menubar currently relies on
+/// the connection coming up implicitly on the first `set_sleep_prevention`).
 #[allow(dead_code)]
 struct ReplyEmpty;
 // SAFETY: argument tuple is unit (no arguments) and return is void.
@@ -266,7 +267,7 @@ impl HelperClient {
     }
 
     /// Query the current sleep-prevention state from the helper.
-    #[allow(dead_code)] // Reserved for Plan 2 health check.
+    #[allow(dead_code)] // Reserved for a future helper-health check.
     pub fn get_status(&self) -> Result<bool, PlatformError> {
         if self.is_unavailable() {
             return Err(PlatformError::HelperUnavailable);
@@ -318,8 +319,9 @@ impl HelperClient {
         recv_or_timeout(&rx)
     }
 
-    /// Round-trip ping. Reserved for Plan 2 (the MVP menubar relies on the
-    /// connection coming up implicitly on the first `set_sleep_prevention`).
+    /// Round-trip ping. Reserved for a future helper-health check; the menubar
+    /// currently relies on the connection coming up implicitly on the first
+    /// `set_sleep_prevention`.
     #[allow(dead_code)]
     pub fn ping(&self) -> Result<(), PlatformError> {
         if self.is_unavailable() {
