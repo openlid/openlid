@@ -33,8 +33,7 @@ refresh caches):
 open -a OpenLid
 ```
 
-See [docs/development/manual-test-checklist.md](docs/development/manual-test-checklist.md)
-for end-to-end smoke testing steps.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered design.
 
 ## What kinds of contributions are welcome
 
@@ -129,7 +128,7 @@ Examples from this repo's history:
 ```
 feat(menubar): single-instance enforcement via control-socket probe
 fix(app): icon refreshes after CLI-driven state changes
-refactor: remove Mode enum; unified keep-awake-style-like behavior
+refactor: consolidate state machine into a single decision function
 ```
 
 ## Pull requests

@@ -45,7 +45,8 @@ pub struct Config {
 
     /// On every app launch, force `enabled = true` regardless of last
     /// persisted state. When `false` (the default), the last `enabled`
-    /// value is restored — matches keep-awake-style's "Activate at launch" off.
+    /// value is restored — the standard "remember-last-state" convention
+    /// users expect from menu-bar utilities.
     #[serde(default)]
     pub activate_at_launch: bool,
 
@@ -83,9 +84,9 @@ fn default_schema_version() -> u32 {
 }
 
 /// Default for `prevent_display_sleep`. Defaults to `true` because the most
-/// common user expectation — "Open-Lid runs ≈ keep-awake-style runs" — is that the
-/// screen does not lock while the tool is active. Users who explicitly want
-/// the screen to lock on idle can set this to `false` in `config.toml`.
+/// common user expectation for a "keep-awake" toggle is that the screen
+/// does not lock while the tool is active. Users who explicitly want the
+/// screen to lock on idle can set this to `false` in `config.toml`.
 fn default_prevent_display_sleep() -> bool {
     true
 }
@@ -221,7 +222,7 @@ mod tests {
 
     #[test]
     fn default_prevents_display_sleep() {
-        // The whole point of this field is to ship a keep-awake-style-equivalent
+        // The whole point of this field is to ship a keep-awake-style
         // default: when sleep prevention is active, the display also stays
         // awake (and so the screen doesn't lock). Flipping this assertion
         // would silently regress that contract.

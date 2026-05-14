@@ -21,9 +21,9 @@ an agent, or a download running; or step away from your desk without
 having macOS lock the screen and dim the display every time you check
 your phone.
 
-Inspired by [keep-awake-style](https://lightheadsw.com/keep-awake-style/) and ported from
-[upstream](https://github.com/narcotic-sh) to Rust for a small
-binary and a future-friendly architecture.
+Built in Rust against Apple's IOKit and AppKit APIs. Small binary,
+native UI, and a future-friendly architecture that allows ports to
+Windows and Linux behind a clean platform-abstraction layer.
 
 > [!NOTE]
 > **Status:** pre-1.0. Apple Silicon, macOS 13+. **v0.2 ships signed and
@@ -61,9 +61,8 @@ battery gets low.
 - **Timed sessions** — Activate for 5 minutes, 30 minutes, 1 / 2 / 5
   hours, or indefinitely.
 - **Display stays awake while preventing sleep** — no idle dim, no
-  screen lock. Implemented via an `IOPMAssertion`, the same mechanism
-  keep-awake-style uses. Opt out in Preferences if you want the screen to lock
-  on idle.
+  screen lock. Implemented via Apple's documented `IOPMAssertion`
+  API. Opt out in Preferences if you want the screen to lock on idle.
 - **Display off when lid closes** — your battery and your thermal envelope
   thank you. Skipped automatically when an external display is connected.
 - **Native preferences window**:
@@ -286,4 +285,4 @@ new features should go through an issue first.
 ## License
 
 [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for third-party
-attributions (Tabler Icons, upstream, keep-awake-style).
+attributions.

@@ -1,8 +1,7 @@
 # Architecture
 
 This document explains why Open-Lid is structured the way it is. For
-high-level usage, see the [README](../README.md). For implementation
-plans / specs / spike findings, see [docs/development/](development/).
+high-level usage, see the [README](../README.md).
 
 ## The fundamental constraint
 
@@ -302,9 +301,3 @@ method, possibly via the `zbus` crate.
 These platforms would add `crates/app/src/platform/{windows,linux}/`
 directories without touching `core` or the menubar UI structure (modulo
 trait-implementation glue).
-
-## See also
-
-- [docs/development/specs/2026-05-10-open-lid-design.md](development/specs/2026-05-10-open-lid-design.md) — original design document, including alternatives considered and decisions made.
-- [docs/development/plans/2026-05-10-open-lid-mvp.md](development/plans/2026-05-10-open-lid-mvp.md) — task-by-task MVP implementation plan.
-- [docs/development/notes/2026-05-10-objc2-xpc-spike-findings.md](development/notes/2026-05-10-objc2-xpc-spike-findings.md) — findings from the de-risking NSXPC spike that informed the helper-protocol crate.

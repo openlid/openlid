@@ -1,8 +1,7 @@
 //! NSXPC client wrapping the connection to `io.openlid.helper`.
 //!
-//! See `docs/superpowers/notes/2026-05-10-objc2-xpc-spike-findings.md` for
-//! the patterns this code uses. The most important takeaway: any reply block
-//! we hand to NSXPC must be created with `RcBlock::with_encoding(...)` so its
+//! The most important takeaway for this file: any reply block we hand to
+//! NSXPC must be created with `RcBlock::with_encoding(...)` so its
 //! descriptor carries `BLOCK_HAS_SIGNATURE`. `RcBlock::new` produces an
 //! "unsigned" block, which NSXPC rejects with the cryptic exception
 //! "Block was not compiled using a compiler that inserts type information

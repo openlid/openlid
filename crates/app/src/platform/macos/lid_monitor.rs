@@ -1,5 +1,7 @@
-//! Monitors lid open/closed state via IOKit IOPMrootDomain.
-//! Port of Sources/upstream/LidMonitor.swift.
+//! Monitors lid open/closed state via IOKit `IOPMrootDomain`. Subscribes
+//! to `kIOGeneralInterest` notifications and filters for
+//! `kIOPMMessageClamshellStateChange` messages, reading the
+//! `AppleClamshellState` registry property to resolve the current state.
 
 use super::iokit_ffi::*;
 use core_foundation::base::TCFType;

@@ -33,9 +33,9 @@ pub fn run() -> Result<()> {
 
     // Single-instance guard. If another `open-lid menubar` is already running,
     // it owns the control socket; we silently exit so launching the .app a
-    // second time is a no-op (matching keep-awake-style's behavior). Without this,
-    // every `open -a OpenLid` would spawn a fresh process, leading to
-    // multiple menu bar icons and a clobbered control socket.
+    // second time is a no-op (the standard menu-bar-utility behavior).
+    // Without this, every `open -a OpenLid` would spawn a fresh process,
+    // leading to multiple menu bar icons and a clobbered control socket.
     if another_instance_running() {
         tracing::info!("menubar: another instance is already running; exiting");
         return Ok(());
