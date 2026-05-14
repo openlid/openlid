@@ -101,7 +101,9 @@ unsafe extern "C" {
 }
 
 // IOPMAssertion FFI. Used to keep the display awake (idle-timer reset) without
-// touching system sleep — the user-visible equivalent of what keep-awake-style does.
+// touching system sleep — the documented Apple mechanism for preventing
+// the display from dimming and the screen from locking while a process is
+// foregrounded.
 // Note: assertion type strings (`kIOPMAssertPreventUserIdleDisplaySleep`) are
 // passed as plain CFStrings; we construct them at the call site from a Rust
 // string rather than dlsym'ing the framework's CFString constants.

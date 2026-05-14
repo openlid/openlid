@@ -35,7 +35,8 @@ impl Default for AppState {
 
 /// The single source of truth: "should we be preventing sleep right now?"
 ///
-/// Behavior (post-mode-removal): when `enabled`, prevent sleep — like keep-awake-style.
+/// Behavior: when `enabled`, prevent sleep unconditionally (subject to
+/// modifiers + the optional auto-expiry timer).
 /// If a timer is set (`until = Some(t)`), prevention stops at `t`.
 pub fn should_prevent_sleep(state: &AppState, now: DateTime<Local>) -> bool {
     if !state.enabled {

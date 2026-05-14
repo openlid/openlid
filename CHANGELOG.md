@@ -41,9 +41,9 @@ installation no longer requires `sudo`.
 - **Display-sleep prevention.** While Open-Lid is on and the lid is open
   (or an external display is attached), the menubar app holds an
   `IOPMAssertion` of type `PreventUserIdleDisplaySleep`, preventing the
-  display from dimming and the screen from locking on idle — keep-awake-style
-  equivalence. Released on lid-close without an external display so the
-  existing `force_display_sleep` battery-saver still wins. New
+  display from dimming and the screen from locking on idle.
+  Released on lid-close without an external display so the existing
+  `force_display_sleep` battery-saver still wins. New
   `prevent_display_sleep` field in `config.toml` (default `true`) and a
   matching "Keep display awake while preventing sleep" checkbox in
   Preferences. Opt out by either route to restore the v0.1 behavior.

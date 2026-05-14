@@ -41,10 +41,11 @@ unsafe impl Sync for UIShared {}
 
 impl UIShared {
     /// Programmatically pop the menu (in response to a right-click or
-    /// option-click). The pattern is from upstream/keep-awake-style: temporarily
-    /// install the menu on the status item, fire a button click to make
-    /// AppKit show it, then immediately un-install so subsequent left-clicks
-    /// route back through the button action.
+    /// option-click). The pattern is the documented AppKit recipe for
+    /// status-item menus: temporarily install the menu on the status item,
+    /// fire a button click to make AppKit show it, then immediately
+    /// un-install so subsequent left-clicks route back through the
+    /// button action.
     pub fn show_menu(&self, mtm: MainThreadMarker) {
         if let Some(button) = self.status_item.button(mtm) {
             self.status_item.setMenu(Some(&self.menu.menu));
@@ -106,9 +107,9 @@ impl StatusItemUI {
         let handler = MenuHandler::new(mtm, actions);
         let menu = build_menu(mtm, &handler);
 
-        // keep-awake-style/upstream pattern: the button's action handles BOTH left
-        // and right clicks. `setMenu(None)` keeps the menu un-installed so
-        // left-click reaches our action; on right/option click the action
+        // Standard NSStatusItem pattern: the button's action handles BOTH
+        // left and right clicks. `setMenu(None)` keeps the menu un-installed
+        // so left-click reaches our action; on right/option click the action
         // calls UIShared::show_menu which temporarily attaches it.
         if let Some(button) = status_item.button(mtm) {
             let handler_obj: &AnyObject = handler.as_ref();
