@@ -720,7 +720,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "open-lid"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -748,7 +748,7 @@ dependencies = [
 
 [[package]]
 name = "open-lid-core"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "bitflags",
  "chrono",
@@ -763,7 +763,7 @@ dependencies = [
 
 [[package]]
 name = "open-lid-helper"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "open-lid-helper-protocol"
-version = "0.2.0"
+version = "1.0.0"
 dependencies = [
  "cc",
  "objc2",
@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "1.0.0"
 
 [[package]]
 name = "zmij"
