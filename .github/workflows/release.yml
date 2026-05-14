@@ -28,6 +28,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+          # Never cache ~/.cargo/bin (those binaries are rustup-managed; a
+          # stale cached cargo can shadow the freshly-installed toolchain
+          # and the next cargo invocation re-runs rustup-init with cargo's
+          # subcommand args, which fails with "unexpected argument 'build'").
+          # Same fix as ci.yml + coverage.yml.
+          cache-bin: "false"
 
       - name: install create-dmg
         run: brew install create-dmg
