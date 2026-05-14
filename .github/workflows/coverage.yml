@@ -29,6 +29,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: coverage
+          # Never cache ~/.cargo/bin (those binaries are rustup-managed; a
+          # stale cached cargo can shadow the freshly-installed toolchain).
+          cache-bin: "false"
       - uses: taiki-e/install-action@cargo-llvm-cov
 
       # Exclude AppKit/IOKit/NSXPC FFI-only modules from per-crate coverage.

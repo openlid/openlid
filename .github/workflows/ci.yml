@@ -28,6 +28,12 @@ jobs:
         with:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Never cache ~/.cargo/bin — those binaries are managed by rustup
+          # via the toolchain action above. Caching them lets a stale cached
+          # cargo/rustc shadow a freshly-installed one, with errors like
+          # "rustup-init: unexpected argument 'fmt' found".
+          cache-bin: "false"
       - run: cargo fmt --all -- --check
 
   clippy:
@@ -39,6 +45,8 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: "false"
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
@@ -48,6 +56,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: "false"
       - run: cargo test --workspace --no-fail-fast
 
   build:
@@ -57,6 +67,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: "false"
       - run: cargo build --workspace --release
 
   audit:
@@ -70,5 +82,6 @@ jobs:
           # Don't share the audit job's cache with builds: audit only needs
           # the registry index, not target artifacts.
           shared-key: audit
+          cache-bin: "false"
       - run: cargo install cargo-audit --locked
       - run: cargo audit
