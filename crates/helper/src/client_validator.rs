@@ -18,8 +18,8 @@ pub struct ClientValidator {
 
 impl ClientValidator {
     /// Build a validator with a code-requirement string.
-    /// Plan 1 (dev) requirement: `identifier "io.openlid.app"`
-    /// Plan 2 (prod) requirement adds Team ID pinning.
+    /// Dev-profile requirement: `identifier "io.openlid.app"`.
+    /// Prod-profile requirement adds Developer ID + Team ID pinning.
     pub fn new(requirement_text: impl Into<String>) -> Self {
         Self {
             requirement_text: requirement_text.into(),

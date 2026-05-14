@@ -101,10 +101,6 @@ where
             battery_threshold_pct,
             prevent_display_sleep,
         }),
-        ControlRequest::Uninstall => {
-            tracing::info!("uninstall requested via control socket");
-            rt.set_enabled(false, None)
-        }
     };
     match result {
         Ok(()) => ControlResponse::Ok {

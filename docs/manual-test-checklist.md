@@ -1,40 +1,51 @@
-# Open-Lid MVP — Manual Test Checklist
+# Open-Lid — Manual Smoke Checklist
 
-Run on a real Apple Silicon MacBook (lid behavior cannot be simulated).
-Before each run, uninstall any previous version via `scripts/dev-uninstall-helper.sh`.
+CI covers unit + integration tests across `open-lid-core` and `open-lid-helper`.
+The AppKit / IOKit / NSXPC / SMAppService surfaces aren't testable from CI, so
+each release is smoke-tested by hand against a real Apple Silicon MacBook
+before tagging. This file is that checklist.
 
 ## Prep
-- [ ] `cargo build -p open-lid -p open-lid-helper`
-- [ ] `./scripts/dev-install-helper.sh` — helper installed (one sudo prompt)
-- [ ] `/Library/Logs/open-lid/helper.log` exists and contains "open-lid-helper starting"
+
+- [ ] Fresh shell. Previous Open-Lid uninstalled:
+  - `pkill -f /Applications/OpenLid.app/Contents/MacOS/open-lid || true`
+  - `./scripts/dev-uninstall-helper.sh`
+  - `rm -rf /Applications/OpenLid.app ~/Library/Application\ Support/io.openlid.open-lid`
+- [ ] `./scripts/install.sh` builds and installs into `/Applications`.
+- [ ] `./scripts/dev-install-helper.sh` installs the helper (one sudo prompt).
+  Local ad-hoc-signed builds bypass SMAppService; this path is dev-only.
 
 ## Menu bar app
-- [ ] `./target/debug/open-lid` launches → icon appears in menu bar
-- [ ] Icon is eye-slash (inactive) at first
-- [ ] Click icon → menu appears with "Turn On", "Mode" submenu, "Quit"
-- [ ] Click "Turn On" → icon switches to eye (active)
-- [ ] In another terminal, `pmset -g | grep SleepDisabled` shows `1`
+
+- [ ] `open -a OpenLid` — laptop icon appears in the menu bar.
+- [ ] Left-click — toggles state; icon updates (open ↔ closed laptop).
+- [ ] Right-click — menu shows current status line + "Activate for ▸" submenu
+      with Indefinitely / 5 / 10 / 15 / 30 min / 1 / 2 / 5 h.
+- [ ] `pmset -g | grep SleepDisabled` returns `1` when on, `0` when off.
 
 ## CLI parity
-- [ ] In a third terminal, `open-lid status` shows "Sleep prevention: ACTIVE"
-- [ ] `open-lid off` → icon switches to eye-slash; `pmset -g` shows `SleepDisabled 0`
-- [ ] `open-lid on` → re-enables
-- [ ] `open-lid mode always-awake` → status shows mode = AlwaysAwake
-- [ ] `open-lid for 2m` → status shows mode = Timed and `until` ≈ now+2min
-- [ ] Wait 2 min → status shows mode unchanged but `preventing_sleep_now = false`
-  (Note: timed auto-revert of `enabled` is in Plan 2; for MVP the timer just
-   stops *preventing* sleep; the user is responsible for switching mode back)
 
-## Lid behavior
-- [ ] With mode = lid-closed and enabled, close the laptop lid with no
-      external display attached → display turns off; system stays awake
-- [ ] Tail `/Library/Logs/open-lid/helper.log` — see `pmset disablesleep 1` invocations
-- [ ] Open lid → display wakes
-- [ ] With mode = lid-closed and an external display attached → closing the
-      lid does NOT force display off; system stays awake on the external display
+- [ ] `open-lid status` reflects the menu bar state.
+- [ ] `open-lid off` deactivates; menu bar icon updates within ~500ms.
+- [ ] `open-lid on` reactivates using the default duration.
+- [ ] `open-lid for 1m` activates with timer; after ~1 minute, state returns
+      to OFF *without* user action.
+- [ ] `open-lid until <future HH:MM>` activates with a wall-clock deadline.
+- [ ] `open-lid status --json` emits valid JSON matching the `Snapshot` shape.
+
+## Lid + display behavior
+
+- [ ] With Open-Lid on, no external display, lid closed → display turns off,
+      system stays awake (helper log: `pmset disablesleep 1`).
+- [ ] Open lid → display wakes; system was never asleep.
+- [ ] With Open-Lid on, external display attached, lid closed → both displays
+      stay awake.
+- [ ] With Open-Lid on, lid open, idle 10 min → screen does **not** lock
+      (IOPMAssertion active). Turning off "Keep display awake while preventing
+      sleep" in Preferences restores normal idle-lock behavior.
 
 ## Cleanup
-- [ ] Quit app via menu
-- [ ] `pmset -g | grep SleepDisabled` shows `0` (sleep restored)
-- [ ] `./scripts/dev-uninstall-helper.sh` — helper removed
-- [ ] `ls /Library/LaunchDaemons/io.openlid.*` returns nothing
+
+- [ ] Quit via menu → `pmset -g | grep SleepDisabled` returns `0`.
+- [ ] Helper has exited (idle-exit after 15s of no XPC traffic).
+- [ ] `./scripts/dev-uninstall-helper.sh` removes the LaunchDaemon plist.

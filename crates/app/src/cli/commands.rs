@@ -180,8 +180,3 @@ pub fn config(c: ConfigArg) -> Result<()> {
     }
     Ok(())
 }
-
-pub fn uninstall() -> Result<()> {
-    println!("uninstall is stubbed in MVP; coming in Plan 2.");
-    Ok(())
-}
