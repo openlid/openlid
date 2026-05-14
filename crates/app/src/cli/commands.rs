@@ -96,7 +96,7 @@ pub fn status(json: bool) -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&state)?);
             } else {
-                print_status_human(&state);
+                print!("{}", format_status_human(&state));
             }
             Ok(())
         }
@@ -114,7 +114,8 @@ pub fn status(json: bool) -> Result<()> {
     }
 }
 
-fn print_status_human(s: &Snapshot) {
+fn format_status_human(s: &Snapshot) -> String {
+    use std::fmt::Write;
     let state_label = match (s.enabled, s.preventing_sleep_now) {
         (false, _) => "OFF".to_string(),
         (true, true) => {
@@ -126,12 +127,14 @@ fn print_status_human(s: &Snapshot) {
         }
         (true, false) => "ON (armed, idle)".to_string(),
     };
-    println!("Sleep prevention: {state_label}");
-    println!("Lid:              {:?}", s.lid);
-    println!("Power:            {:?}", s.power);
+    let mut out = String::new();
+    writeln!(out, "Sleep prevention: {state_label}").unwrap();
+    writeln!(out, "Lid:              {:?}", s.lid).unwrap();
+    writeln!(out, "Power:            {:?}", s.power).unwrap();
     if let Some(pct) = s.battery_threshold_pct {
-        println!("Auto-off below:   {pct}% battery");
+        writeln!(out, "Auto-off below:   {pct}% battery").unwrap();
     }
+    out
 }
 
 pub fn for_duration(s: &str) -> Result<()> {
@@ -146,14 +149,14 @@ pub fn until(s: &str) -> Result<()> {
 }
 
 fn parse_until(s: &str) -> Result<DateTime<Local>> {
+    parse_until_at(Local::now(), s)
+}
+
+fn parse_until_at(now: DateTime<Local>, s: &str) -> Result<DateTime<Local>> {
     if let Ok(t) = NaiveTime::parse_from_str(s, "%H:%M") {
-        let today = Local::now().date_naive().and_time(t);
+        let today = now.date_naive().and_time(t);
         let dt = Local.from_local_datetime(&today).single().unwrap();
-        return Ok(if dt > Local::now() {
-            dt
-        } else {
-            dt + Duration::days(1)
-        });
+        return Ok(if dt > now { dt } else { dt + Duration::days(1) });
     }
     let naive = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M")
         .context("expected HH:MM or YYYY-MM-DDTHH:MM")?;
@@ -179,4 +182,141 @@ pub fn config(c: ConfigArg) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_lid_core::ipc::control::HelperStatus;
+    use open_lid_core::mode::{LidState, Modifiers, PowerSource};
+
+    // ─────────────────────────────────────────────────────────────────────
+    // parse_until_at — pure date logic with an injected `now`
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn fixed_now() -> DateTime<Local> {
+        // Wednesday 2026-05-14, 12:00:00 local. Well clear of midnight,
+        // and the date sits outside any DST transition for IANA TZs on
+        // any plausible CI runner.
+        Local.with_ymd_and_hms(2026, 5, 14, 12, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn parse_until_at_hhmm_in_future_today_rolls_into_today() {
+        let got = parse_until_at(fixed_now(), "18:00").unwrap();
+        assert_eq!(got, Local.with_ymd_and_hms(2026, 5, 14, 18, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn parse_until_at_hhmm_in_past_today_rolls_into_tomorrow() {
+        let got = parse_until_at(fixed_now(), "09:00").unwrap();
+        assert_eq!(got, Local.with_ymd_and_hms(2026, 5, 15, 9, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn parse_until_at_hhmm_equal_to_now_rolls_into_tomorrow() {
+        // Current behavior is `dt > now`; equality lands in the else branch.
+        let got = parse_until_at(fixed_now(), "12:00").unwrap();
+        assert_eq!(got, Local.with_ymd_and_hms(2026, 5, 15, 12, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn parse_until_at_full_iso_returns_that_exact_datetime() {
+        let got = parse_until_at(fixed_now(), "2026-12-25T08:30").unwrap();
+        assert_eq!(got, Local.with_ymd_and_hms(2026, 12, 25, 8, 30, 0).unwrap());
+    }
+
+    #[test]
+    fn parse_until_at_invalid_string_returns_error_with_format_hint() {
+        let err = parse_until_at(fixed_now(), "not a time").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("expected HH:MM"),
+            "unexpected error message: {msg}",
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // format_status_human — pure formatter
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn snap() -> Snapshot {
+        Snapshot {
+            preventing_sleep_now: false,
+            enabled: false,
+            until: None,
+            modifiers: Modifiers::default(),
+            lid: LidState::Open,
+            power: PowerSource::Ac,
+            helper: HelperStatus::Running,
+            start_at_login: false,
+            activate_at_launch: false,
+            default_duration_minutes: None,
+            battery_threshold_pct: None,
+            prevent_display_sleep: false,
+        }
+    }
+
+    #[test]
+    fn format_status_off() {
+        let out = format_status_human(&snap());
+        assert!(out.contains("Sleep prevention: OFF"));
+        assert!(out.contains("Lid:              Open"));
+        assert!(out.contains("Power:            Ac"));
+        assert!(!out.contains("Auto-off below"));
+    }
+
+    #[test]
+    fn format_status_on_preventing_now_with_until() {
+        let mut s = snap();
+        s.enabled = true;
+        s.preventing_sleep_now = true;
+        s.until = Some(Local.with_ymd_and_hms(2026, 5, 14, 22, 30, 0).unwrap());
+        let out = format_status_human(&s);
+        assert!(
+            out.contains("Sleep prevention: ON until 22:30 (preventing sleep now)"),
+            "got: {out}",
+        );
+    }
+
+    #[test]
+    fn format_status_on_preventing_now_indefinite_has_no_until() {
+        let mut s = snap();
+        s.enabled = true;
+        s.preventing_sleep_now = true;
+        s.until = None;
+        let out = format_status_human(&s);
+        assert!(out.contains("Sleep prevention: ON (preventing sleep now)"));
+        assert!(!out.contains("until"));
+    }
+
+    #[test]
+    fn format_status_on_armed_but_idle() {
+        let mut s = snap();
+        s.enabled = true;
+        s.preventing_sleep_now = false;
+        let out = format_status_human(&s);
+        assert!(out.contains("Sleep prevention: ON (armed, idle)"));
+    }
+
+    #[test]
+    fn format_status_includes_battery_threshold_when_set() {
+        let mut s = snap();
+        s.battery_threshold_pct = Some(20);
+        let out = format_status_human(&s);
+        assert!(out.contains("Auto-off below:   20% battery"), "got: {out}");
+    }
+
+    #[test]
+    fn format_status_reflects_lid_and_power_debug_repr() {
+        let mut s = snap();
+        s.lid = LidState::Closed;
+        s.power = PowerSource::Battery { percent: 73 };
+        let out = format_status_human(&s);
+        assert!(out.contains("Lid:              Closed"));
+        assert!(
+            out.contains("Power:            Battery { percent: 73 }"),
+            "got: {out}",
+        );
+    }
 }

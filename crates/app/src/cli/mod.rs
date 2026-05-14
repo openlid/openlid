@@ -54,3 +54,95 @@ pub fn run(args: Vec<String>) -> Result<()> {
         Command::Config(c) => commands::config(c),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_menubar() {
+        let cli = Cli::try_parse_from(["open-lid", "menubar"]).unwrap();
+        assert!(matches!(cli.command, Command::Menubar));
+    }
+
+    #[test]
+    fn parses_helper() {
+        let cli = Cli::try_parse_from(["open-lid", "helper"]).unwrap();
+        assert!(matches!(cli.command, Command::Helper));
+    }
+
+    #[test]
+    fn parses_on() {
+        let cli = Cli::try_parse_from(["open-lid", "on"]).unwrap();
+        assert!(matches!(cli.command, Command::On));
+    }
+
+    #[test]
+    fn parses_off() {
+        let cli = Cli::try_parse_from(["open-lid", "off"]).unwrap();
+        assert!(matches!(cli.command, Command::Off));
+    }
+
+    #[test]
+    fn parses_status_default_is_human() {
+        let cli = Cli::try_parse_from(["open-lid", "status"]).unwrap();
+        assert!(matches!(cli.command, Command::Status { json: false }));
+    }
+
+    #[test]
+    fn parses_status_with_json_flag() {
+        let cli = Cli::try_parse_from(["open-lid", "status", "--json"]).unwrap();
+        assert!(matches!(cli.command, Command::Status { json: true }));
+    }
+
+    #[test]
+    fn parses_for_with_duration_arg() {
+        let cli = Cli::try_parse_from(["open-lid", "for", "2h"]).unwrap();
+        match cli.command {
+            Command::For { duration } => assert_eq!(duration, "2h"),
+            other => panic!("expected For, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_until_with_time_arg() {
+        let cli = Cli::try_parse_from(["open-lid", "until", "22:00"]).unwrap();
+        match cli.command {
+            Command::Until { time } => assert_eq!(time, "22:00"),
+            other => panic!("expected Until, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_config_show() {
+        let cli = Cli::try_parse_from(["open-lid", "config", "show"]).unwrap();
+        assert!(matches!(cli.command, Command::Config(ConfigArg::Show)));
+    }
+
+    #[test]
+    fn parses_config_path() {
+        let cli = Cli::try_parse_from(["open-lid", "config", "path"]).unwrap();
+        assert!(matches!(cli.command, Command::Config(ConfigArg::Path)));
+    }
+
+    #[test]
+    fn parses_config_edit() {
+        let cli = Cli::try_parse_from(["open-lid", "config", "edit"]).unwrap();
+        assert!(matches!(cli.command, Command::Config(ConfigArg::Edit)));
+    }
+
+    #[test]
+    fn rejects_config_without_subcommand() {
+        assert!(Cli::try_parse_from(["open-lid", "config"]).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_subcommand() {
+        assert!(Cli::try_parse_from(["open-lid", "thisdoesnotexist"]).is_err());
+    }
+
+    #[test]
+    fn rejects_for_without_duration_arg() {
+        assert!(Cli::try_parse_from(["open-lid", "for"]).is_err());
+    }
+}
