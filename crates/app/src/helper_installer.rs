@@ -144,3 +144,56 @@ fn unwrap_error(err_ptr: *mut NSError, op: &str) -> anyhow::Error {
         None => anyhow!("SMAppService {op} failed: unknown"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_raw_zero_is_not_registered() {
+        assert_eq!(
+            HelperServiceStatus::from_raw(0),
+            HelperServiceStatus::NotRegistered,
+        );
+    }
+
+    #[test]
+    fn from_raw_one_is_enabled() {
+        assert_eq!(
+            HelperServiceStatus::from_raw(1),
+            HelperServiceStatus::Enabled,
+        );
+    }
+
+    #[test]
+    fn from_raw_two_is_requires_approval() {
+        assert_eq!(
+            HelperServiceStatus::from_raw(2),
+            HelperServiceStatus::RequiresApproval,
+        );
+    }
+
+    #[test]
+    fn from_raw_three_is_not_found() {
+        assert_eq!(
+            HelperServiceStatus::from_raw(3),
+            HelperServiceStatus::NotFound,
+        );
+    }
+
+    #[test]
+    fn from_raw_unknown_positive_preserves_value() {
+        assert_eq!(
+            HelperServiceStatus::from_raw(99),
+            HelperServiceStatus::Unknown(99),
+        );
+    }
+
+    #[test]
+    fn from_raw_unknown_negative_preserves_value() {
+        assert_eq!(
+            HelperServiceStatus::from_raw(-1),
+            HelperServiceStatus::Unknown(-1),
+        );
+    }
+}

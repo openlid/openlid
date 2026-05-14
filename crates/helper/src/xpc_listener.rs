@@ -498,4 +498,163 @@ mod tests {
         helper.handle_set_sleep_prevention(true).unwrap();
         assert!(helper.handle_get_status().unwrap());
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Failure paths. These tests *codify* the contracts on partial
+    // failure of handle_set_sleep_prevention: the marker tracks "we
+    // attempted to flip pmset", and it stays on disk until a *successful*
+    // re-enable. Removing the marker after a failed pmset call would lie
+    // about the system's sleep state.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_true_returns_err_when_pmset_fails_and_keeps_marker() {
+        let dir = tempdir().unwrap();
+        let marker = dir.path().join("marker.flag");
+        let helper = make_impl(marker.clone());
+        helper.pmset.fail_set.store(true, Ordering::SeqCst);
+
+        let err = helper.handle_set_sleep_prevention(true).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("pmset set_disable_sleep failure"),
+            "unexpected error: {err:#}",
+        );
+
+        // CONTRACT: marker was written before the pmset attempt, and it
+        // stays on disk.
+        assert!(marker.exists(), "marker must remain after partial failure");
+        // FakePmset does not record failed calls.
+        assert!(helper.pmset.set_calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn set_false_returns_err_when_pmset_fails_and_keeps_marker() {
+        let dir = tempdir().unwrap();
+        let marker = dir.path().join("marker.flag");
+        let helper = make_impl(marker.clone());
+
+        // Enable cleanly so marker exists and pmset reports disabled-sleep.
+        helper.handle_set_sleep_prevention(true).unwrap();
+        assert!(marker.exists());
+        assert!(*helper.pmset.enabled.lock().unwrap());
+
+        // Now make the disable-pmset call fail.
+        helper.pmset.fail_set.store(true, Ordering::SeqCst);
+        let err = helper.handle_set_sleep_prevention(false).unwrap_err();
+        assert!(format!("{err:#}").contains("pmset set_disable_sleep failure"));
+
+        // CONTRACT: marker must NOT be removed if we failed to re-enable
+        // sleep. The marker existing means pmset is still in the disabled
+        // state; removing it now would lie.
+        assert!(marker.exists(), "marker must remain when re-enable fails");
+        assert!(
+            *helper.pmset.enabled.lock().unwrap(),
+            "pmset state should still report disabled-sleep",
+        );
+    }
+
+    #[test]
+    fn set_true_returns_err_when_marker_write_fails_and_pmset_not_called() {
+        let dir = tempdir().unwrap();
+        // Plant a regular file where the marker's parent directory should
+        // be — `create_dir_all` inside OwnershipMarker::write will fail
+        // because the parent path is a file, not a directory.
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, b"").unwrap();
+        let marker = blocker.join("marker.flag");
+        let helper = make_impl(marker.clone());
+
+        let _ = helper
+            .handle_set_sleep_prevention(true)
+            .expect_err("marker.write should fail when parent is a regular file");
+
+        // CONTRACT: pmset must NOT be called if the marker write failed.
+        // The marker write is the "claim ownership" step.
+        assert!(helper.pmset.set_calls.lock().unwrap().is_empty());
+        assert!(!*helper.pmset.enabled.lock().unwrap());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Connection counter — drives idle_exit arm/disarm
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn make_shared(marker_path: std::path::PathBuf) -> (Arc<dyn HelperHandle>, Shared) {
+        let helper = make_impl(marker_path);
+        let helper_handle: Arc<dyn HelperHandle> = Arc::new(helper);
+        let active = Arc::new(AtomicUsize::new(0));
+        let shared = Shared::new(Arc::clone(&helper_handle), Arc::clone(&active));
+        (helper_handle, shared)
+    }
+
+    #[test]
+    fn open_from_zero_disarms_idle_exit() {
+        let dir = tempdir().unwrap();
+        let (helper, shared) = make_shared(dir.path().join("marker.flag"));
+
+        // Pre-arm so the disarm is observable. The 15-s exit closure
+        // wouldn't fire before the test ends; on_connection_opened disarms
+        // it before that anyway.
+        helper.idle_exit().arm(|| {});
+        assert!(helper.idle_exit().is_armed());
+
+        on_connection_opened(&shared);
+
+        assert_eq!(shared.active_connections.load(Ordering::SeqCst), 1);
+        assert!(
+            !helper.idle_exit().is_armed(),
+            "first connection should disarm idle_exit",
+        );
+    }
+
+    #[test]
+    fn open_while_active_does_not_touch_idle_exit() {
+        let dir = tempdir().unwrap();
+        let (helper, shared) = make_shared(dir.path().join("marker.flag"));
+        // Simulate one already-open connection.
+        shared.active_connections.store(1, Ordering::SeqCst);
+        assert!(!helper.idle_exit().is_armed());
+
+        on_connection_opened(&shared);
+
+        assert_eq!(shared.active_connections.load(Ordering::SeqCst), 2);
+        assert!(
+            !helper.idle_exit().is_armed(),
+            "subsequent connections must not change idle_exit state",
+        );
+    }
+
+    #[test]
+    fn close_to_zero_arms_idle_exit() {
+        let dir = tempdir().unwrap();
+        let (helper, shared) = make_shared(dir.path().join("marker.flag"));
+        shared.active_connections.store(1, Ordering::SeqCst);
+        assert!(!helper.idle_exit().is_armed());
+
+        on_connection_closed(&shared);
+
+        assert_eq!(shared.active_connections.load(Ordering::SeqCst), 0);
+        assert!(
+            helper.idle_exit().is_armed(),
+            "last close should arm idle_exit",
+        );
+        // Disarm so the 15-s exit timer (which would call
+        // std::process::exit(0)) doesn't fire mid-test-suite.
+        helper.idle_exit().disarm();
+    }
+
+    #[test]
+    fn close_while_still_active_does_not_arm() {
+        let dir = tempdir().unwrap();
+        let (helper, shared) = make_shared(dir.path().join("marker.flag"));
+        shared.active_connections.store(2, Ordering::SeqCst);
+        assert!(!helper.idle_exit().is_armed());
+
+        on_connection_closed(&shared);
+
+        assert_eq!(shared.active_connections.load(Ordering::SeqCst), 1);
+        assert!(
+            !helper.idle_exit().is_armed(),
+            "must not arm while still active",
+        );
+    }
 }

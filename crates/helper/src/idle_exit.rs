@@ -48,6 +48,11 @@ impl IdleExit {
     pub fn disarm(&self) {
         self.inner.lock().unwrap().armed = false;
     }
+
+    #[cfg(test)]
+    pub fn is_armed(&self) -> bool {
+        self.inner.lock().unwrap().armed
+    }
 }
 
 #[cfg(test)]
