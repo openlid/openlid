@@ -4,39 +4,40 @@
 
 # Open-Lid
 
-**Keep your Mac awake — even with the lid closed.**
+**Keep your laptop awake — even with the lid closed.**
 
 [![CI](https://github.com/openlid/open-lid/actions/workflows/ci.yml/badge.svg)](https://github.com/openlid/open-lid/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/openlid/open-lid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/open-lid)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/openlid/open-lid)](https://github.com/openlid/open-lid/releases/latest)
 [![GitHub downloads](https://img.shields.io/github/downloads/openlid/open-lid/total)](https://github.com/openlid/open-lid/releases)
-[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg?logo=apple)](https://github.com/openlid/open-lid)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/open-lid)
 
 </div>
 
-Open-Lid is a tiny macOS menu bar utility that keeps your Mac awake —
-with the lid open or closed. Carry your laptop around with a long build,
-an agent, or a download running; or step away from your desk without
-having macOS lock the screen and dim the display every time you check
-your phone.
+Open-Lid is a tiny menu bar utility that keeps your laptop awake — with
+the lid open or closed. Carry it around with a long build, an agent, or
+a download running; or step away from your desk without having the OS
+lock the screen and dim the display every time you check your phone.
 
-Built in Rust against Apple's IOKit and AppKit APIs. Small binary,
-native UI, and a future-friendly architecture that allows ports to
-Windows and Linux behind a clean platform-abstraction layer.
+Built in Rust with a platform-abstraction layer in `open-lid-core` so the
+state machine and CLI are OS-independent. The macOS implementation calls
+IOKit + AppKit + ServiceManagement; the Linux implementation (planned)
+will call logind via D-Bus.
 
 > [!NOTE]
-> **Status:** pre-1.0. Apple Silicon, macOS 13+. **v0.2 ships signed and
-> notarized** — no Gatekeeper warning. Helper installs automatically via
-> `SMAppService` — no `sudo` required.
+> **Status: pre-1.0.** macOS 13+ on Apple Silicon today. **Linux support
+> planned for v1.x; Windows depending on demand.** v0.2 on macOS ships
+> signed and notarized — no Gatekeeper warning. Helper installs
+> automatically via `SMAppService` — no `sudo` required.
 
 ---
 
 ## Why?
 
-You're at a meeting in a different room. You close your MacBook lid to
+You're at a meeting in a different room. You close your laptop lid to
 carry it. A coding agent is doing real work; your `cargo build` is 4
-minutes from finishing; a long file is downloading. macOS sleeps the
+minutes from finishing; a long file is downloading. The OS sleeps the
 system the moment the lid closes, killing everything.
 
 Or: you're at your desk, you step away for five minutes, and you come
@@ -82,7 +83,13 @@ battery gets low.
 
 ## Installation
 
-### Download the signed DMG (recommended)
+> [!IMPORTANT]
+> Installation today is macOS-only. Linux installation instructions
+> will land here once the Linux backend ships in v1.x. If you'd find
+> Open-Lid useful on Linux, please [open an issue](https://github.com/openlid/open-lid/issues/new/choose)
+> describing your distro and use case — it helps prioritize.
+
+### Download the signed DMG (recommended) — macOS
 
 ```bash
 # Homebrew tap:
@@ -96,7 +103,7 @@ After installing, launch Open-Lid; macOS will prompt you to enable it in
 **System Settings → General → Login Items → Allow in the Background**.
 Flip the Open-Lid toggle on — no admin password required.
 
-### From source
+### From source — macOS
 
 Prerequisites: macOS 13+ on Apple Silicon, Rust 1.88+, Xcode Command Line
 Tools.
@@ -273,9 +280,17 @@ prevented; only the display-idle assertion is dropped.
   surfaces under semver. Adds a `version` field to the config schema
   as a forward-compatibility hook for future v2.x. See
   [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
-- [ ] **v1.x — Cross-platform.** Linux (logind) and Windows
-  (`SetThreadExecutionState`) implementations behind the existing
-  `open-lid-core` traits.
+- [ ] **v1.x — Linux support.** Linux backend talking to systemd-logind
+  via D-Bus (`Inhibit("sleep:handle-lid-switch")`), wired into the
+  existing `open-lid-core` platform traits. UI shape TBD — either a
+  GTK/Qt tray icon or a headless daemon driven by the CLI; tracked in
+  the v1.x design discussion.
+- [ ] **v2.x — Windows on demand.** Windows backend
+  (`SetThreadExecutionState` + `WM_POWERBROADCAST`) ships if there's
+  user demand. The `open-lid-core` platform traits are already
+  cross-platform-shaped, so this is a backend addition, not a rewrite.
+  [Open an issue](https://github.com/openlid/open-lid/issues/new/choose)
+  to register interest.
 
 ## Contributing
 

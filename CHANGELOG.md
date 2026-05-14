@@ -113,7 +113,8 @@ First tagged release. Local-use MVP.
 
 ### Known limitations
 
-- macOS Apple Silicon only; Intel and older macOS versions untested.
+- macOS Apple Silicon only (Intel and older macOS untested; Linux and
+  Windows planned for future major releases).
 - The helper installs via `scripts/dev-install-helper.sh` (requires `sudo`).
   Production `SMAppService` install path requires Apple Developer ID
   signing — coming in v0.2.0 alongside notarized releases.
