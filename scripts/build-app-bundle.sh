@@ -71,9 +71,6 @@ if [ ! -f resources/app/AppIcon.icns ]; then
 fi
 cp resources/app/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-# Bundled installer for Homebrew cask path (post-flight points at this).
-install -m 0755 resources/app/install-helper.sh "$APP/Contents/Resources/install-helper.sh"
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Sign. Order matters: nested binaries first, then the bundle. Neither binary
 # needs special entitlements beyond hardened runtime: no JIT, no DYLD loading
