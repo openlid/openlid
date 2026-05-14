@@ -75,6 +75,21 @@ mod tests {
         }
     }
 
+    /// Poll `predicate` until it returns true or the deadline is hit. Returns
+    /// whether the predicate became true. Used in place of `sleep(longer than
+    /// expected) + assert`, which flakes on CI when the scheduler delays the
+    /// timer thread by more than the test's headroom window.
+    fn wait_for<F: Fn() -> bool>(predicate: F, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if predicate() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        predicate()
+    }
+
     #[test]
     fn fires_after_duration_if_not_disarmed() {
         let fired = Arc::new(AtomicBool::new(false));
@@ -83,8 +98,10 @@ mod tests {
         t.arm_for_test(Duration::from_millis(50), move || {
             f2.store(true, Ordering::SeqCst);
         });
-        std::thread::sleep(Duration::from_millis(120));
-        assert!(fired.load(Ordering::SeqCst));
+        assert!(
+            wait_for(|| fired.load(Ordering::SeqCst), Duration::from_secs(2)),
+            "timer did not fire within 2s",
+        );
     }
 
     #[test]
@@ -98,7 +115,8 @@ mod tests {
         // Disarm before sleeping so CI scheduler pauses can't reorder
         // arm/disarm around the timer thread's wakeup.
         t.disarm();
-        std::thread::sleep(Duration::from_millis(200));
+        // Wait well beyond the timer duration; the closure must NOT fire.
+        std::thread::sleep(Duration::from_millis(300));
         assert!(!fired.load(Ordering::SeqCst));
     }
 
@@ -114,17 +132,24 @@ mod tests {
             f1.store(true, Ordering::SeqCst);
         });
         let start = Instant::now();
-        std::thread::sleep(Duration::from_millis(10));
+        // Re-arm immediately. The first timer's generation is invalidated,
+        // so even if its sleep elapses on a delayed scheduler, the closure
+        // observes the bumped generation and exits without firing.
         t.arm_for_test(Duration::from_millis(150), move || {
             f2.store(true, Ordering::SeqCst);
         });
-        std::thread::sleep(Duration::from_millis(80));
-        assert!(!fired_first.load(Ordering::SeqCst));
-        std::thread::sleep(Duration::from_millis(120));
         assert!(
-            fired_second.load(Ordering::SeqCst),
-            "elapsed: {:?}",
-            start.elapsed()
+            wait_for(
+                || fired_second.load(Ordering::SeqCst),
+                Duration::from_secs(2)
+            ),
+            "second timer did not fire within 2s; elapsed: {:?}",
+            start.elapsed(),
+        );
+        // The first timer's closure should NEVER have fired.
+        assert!(
+            !fired_first.load(Ordering::SeqCst),
+            "first (superseded) timer fired anyway",
         );
     }
 }
