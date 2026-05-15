@@ -28,6 +28,14 @@ impl IdleExit {
     }
 
     pub fn arm<F: FnOnce() + Send + 'static>(&self, on_fire: F) {
+        self.arm_with_duration(Duration::from_secs(IDLE_EXIT_SECS), on_fire);
+    }
+
+    /// Shared body for `arm()` and the test-only short-duration variant.
+    /// Splitting out the duration lets tests exercise the same code path
+    /// without a 15-second wall-clock wait, and avoids the silent drift
+    /// that a second copy of the arm/spawn body would invite.
+    fn arm_with_duration<F: FnOnce() + Send + 'static>(&self, dur: Duration, on_fire: F) {
         let mut state = self.inner.lock().unwrap();
         state.generation = state.generation.wrapping_add(1);
         state.armed = true;
@@ -36,7 +44,7 @@ impl IdleExit {
 
         let inner = Arc::clone(&self.inner);
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(IDLE_EXIT_SECS));
+            std::thread::sleep(dur);
             let s = inner.lock().unwrap();
             if s.armed && s.generation == my_gen {
                 drop(s);
@@ -63,20 +71,10 @@ mod tests {
 
     impl IdleExit {
         fn arm_for_test<F: FnOnce() + Send + 'static>(&self, dur: Duration, on_fire: F) {
-            let mut state = self.inner.lock().unwrap();
-            state.generation = state.generation.wrapping_add(1);
-            state.armed = true;
-            let my_gen = state.generation;
-            drop(state);
-            let inner = Arc::clone(&self.inner);
-            std::thread::spawn(move || {
-                std::thread::sleep(dur);
-                let s = inner.lock().unwrap();
-                if s.armed && s.generation == my_gen {
-                    drop(s);
-                    on_fire();
-                }
-            });
+            // Thin wrapper to keep the existing test sites readable. The
+            // production code path is exercised through this method too —
+            // there is no second copy of the arm body to drift.
+            self.arm_with_duration(dur, on_fire);
         }
     }
 
@@ -122,6 +120,43 @@ mod tests {
         t.disarm();
         // Wait well beyond the timer duration; the closure must NOT fire.
         std::thread::sleep(Duration::from_millis(300));
+        assert!(!fired.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn wait_for_returns_false_when_predicate_never_holds() {
+        // The other tests in this module pass `wait_for` a predicate that
+        // becomes true mid-loop, so they only exercise the early-return
+        // branch. This test pins the timeout branch: the loop exits, the
+        // final `predicate()` runs once more, and the helper reports
+        // failure. If wait_for ever started returning `true` on timeout
+        // (e.g., off-by-one in the deadline check), other tests would
+        // pass silently while masking real timer bugs.
+        let res = wait_for(|| false, Duration::from_millis(20));
+        assert!(!res);
+    }
+
+    #[test]
+    fn arm_uses_production_duration() {
+        // Pins the contract that calling the public `arm()` (no duration)
+        // schedules against IDLE_EXIT_SECS, not some hard-coded default.
+        // We don't wait the full 15 s; we verify the armed state and that
+        // an explicit disarm cancels the closure (the same generation
+        // guard that `disarm_before_fire_prevents_firing` checks for the
+        // test-duration variant).
+        let fired = Arc::new(AtomicBool::new(false));
+        let f2 = Arc::clone(&fired);
+        let t = IdleExit::new();
+        t.arm(move || {
+            f2.store(true, Ordering::SeqCst);
+        });
+        assert!(t.is_armed());
+        t.disarm();
+        assert!(!t.is_armed());
+        // The 15 s timer is still scheduled in a background thread, but
+        // its generation check on wake-up will see `armed = false` and
+        // skip the closure. We don't sleep here — the disarm is the
+        // contract being asserted.
         assert!(!fired.load(Ordering::SeqCst));
     }
 

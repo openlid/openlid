@@ -43,10 +43,18 @@ jobs:
       # These call into macOS frameworks that aren't available (or meaningful)
       # under unit-test conditions on CI: no display, no NSXPC peer, no IOKit.
       # The realistic per-crate goal is honest reporting, not vanity numbers.
+      #
+      # Also excluded:
+      #   * Both `main.rs` entry points — process glue around the run loop and
+      #     daemon bootstrap. Covering them requires spawning the real
+      #     binaries, which is an integration-test surface, not a unit one.
+      #   * `crates/helper-protocol` — its single function returns a Clang-
+      #     emitted Objective-C Protocol pointer via a C extern. There is no
+      #     non-FFI path through that crate to exercise.
       - name: cargo llvm-cov
         run: |
           cargo llvm-cov --workspace --lcov --output-path lcov.info \
-            --ignore-filename-regex 'crates/(app|helper)/src/(platform|menubar|helper_client|launch_at_login|main_thread|control_server)'
+            --ignore-filename-regex 'crates/(app|helper)/src/(platform|menubar|helper_client|launch_at_login|main_thread|control_server|main\.rs)|crates/helper-protocol/'
 
       # Authenticate to Codecov via OIDC instead of a static token.
       # Requires:

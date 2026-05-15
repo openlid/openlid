@@ -235,4 +235,59 @@ mod tests {
         let now = Local.with_ymd_and_hms(2026, 5, 11, 18, 0, 0).unwrap();
         assert!(!sched.contains(now));
     }
+
+    #[test]
+    fn days_of_week_default_is_empty() {
+        // Pins the contract that an unconfigured `DaysOfWeek` is the
+        // empty set, not an arbitrary sentinel. `Modifiers::default()`
+        // relies on this so a fresh-install config has no implicit
+        // active days that would silently widen the schedule semantics.
+        assert_eq!(DaysOfWeek::default(), DaysOfWeek::empty());
+        assert!(!DaysOfWeek::default().contains(DaysOfWeek::MON));
+    }
+
+    #[test]
+    fn schedule_contains_dispatches_all_weekdays_today() {
+        // The today_flag match in `Schedule::contains` has an arm per
+        // weekday. Walking a 7-day stretch (Mon → Sun, 2026-05-11..17)
+        // forces every arm to dispatch. With days=all() and a window
+        // covering noon, every iteration should return true. If a
+        // future edit reordered or dropped an arm, this test would
+        // catch it for every weekday at once instead of only the
+        // specific day the existing tests happen to hit.
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(23, 59, 59).unwrap(),
+        };
+        for day in 11..=17u32 {
+            let now = Local.with_ymd_and_hms(2026, 5, day, 12, 0, 0).unwrap();
+            assert!(
+                sched.contains(now),
+                "noon on 2026-05-{day} should be inside an all-days, all-day window",
+            );
+        }
+    }
+
+    #[test]
+    fn schedule_cross_midnight_dispatches_all_yesterday_arms() {
+        // When start > end the schedule wraps midnight, and the
+        // implementation looks at YESTERDAY's day-of-week for early-
+        // morning samples. Cycling 7 consecutive days at 01:00 dispatches
+        // every arm of the yesterday match. Companion to the today-arm
+        // test above — together they pin the full weekday-dispatch
+        // surface of `Schedule::contains`.
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(2, 0, 0).unwrap(),
+        };
+        for day in 12..=18u32 {
+            let now = Local.with_ymd_and_hms(2026, 5, day, 1, 0, 0).unwrap();
+            assert!(
+                sched.contains(now),
+                "01:00 on 2026-05-{day} should be inside a 22:00-02:00 window with all days set",
+            );
+        }
+    }
 }

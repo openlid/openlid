@@ -303,4 +303,31 @@ mod tests {
             "known field should be preserved under Option A"
         );
     }
+
+    #[test]
+    fn default_path_resolves_under_project_dirs() {
+        // `default_path` is the only documented way callers find the
+        // config file. Pin two contracts: (1) it succeeds on a normal
+        // developer/CI machine (where ProjectDirs::from returns Some),
+        // and (2) the resolved file is named `config.toml`. If a future
+        // refactor renamed the file (e.g., to `config.yaml`), CLI
+        // `open-lid config show` would silently look at the wrong path.
+        let p = Config::default_path().expect("ProjectDirs should resolve in a test env");
+        assert_eq!(p.file_name().and_then(|s| s.to_str()), Some("config.toml"));
+    }
+
+    #[test]
+    fn load_propagates_non_not_found_io_errors() {
+        // Pin the contract: `load()` swallows `NotFound` (returns the
+        // default config) but must bubble up every other IO error.
+        // Pointing it at a directory triggers a non-NotFound error
+        // (`IsADirectory` on Linux, sometimes `PermissionDenied` /
+        // similar on macOS). If a regression made `load()` treat all
+        // IO errors as missing-file, a half-broken filesystem state
+        // would silently overwrite the user's real config with the
+        // default on next save.
+        let dir = tempdir().unwrap();
+        let err = Config::load(dir.path()).expect_err("expected non-NotFound IO error");
+        assert!(matches!(err, ConfigError::Io(_)), "got: {err:?}");
+    }
 }

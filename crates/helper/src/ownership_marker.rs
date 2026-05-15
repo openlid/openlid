@@ -80,4 +80,31 @@ mod tests {
         OwnershipMarker::at(&p).write().unwrap();
         assert!(p.exists());
     }
+
+    #[test]
+    fn new_uses_production_marker_path() {
+        // Pins the contract for the production constructor: the marker
+        // lives under /Library/Application Support, not in the user's
+        // home dir. Crash-recovery on next helper launch checks this
+        // exact path; moving it (even to a sibling location) would
+        // break recovery because the helper's first action is
+        // `self.marker.exists()`.
+        let m = OwnershipMarker::new();
+        assert!(m.path.starts_with("/Library/Application Support"));
+        assert!(m.path.ends_with("sleep-prevention.enabled"));
+    }
+
+    #[test]
+    fn remove_returns_err_for_non_not_found_io_failure() {
+        // remove() treats "file already gone" as success (the desired
+        // post-condition) but must bubble up any OTHER IO error.
+        // Targeting a directory triggers a non-NotFound error (the
+        // exact ErrorKind varies by platform), exercising the third
+        // match arm. Regressing this to swallow all errors would let
+        // crash-recovery falsely believe the marker was cleared while
+        // a partial-permissions failure left a stale marker on disk.
+        let dir = tempdir().unwrap();
+        let m = OwnershipMarker::at(dir.path());
+        let _ = m.remove().expect_err("expected non-NotFound IO error");
+    }
 }

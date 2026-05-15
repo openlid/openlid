@@ -657,4 +657,64 @@ mod tests {
             "must not arm while still active",
         );
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // HelperHandle trait dispatch — exercises the forwarding impl that
+    // sits between the NSXPC-facing `Exported` class and the concrete
+    // `HelperImpl`. The other tests in this module call methods on
+    // `HelperImpl` directly, which leaves the trait impl untested; if
+    // those forwarding methods ever drift (different argument order,
+    // wrong helper reference, etc.) every NSXPC client call would be
+    // wrong but unit tests would still pass without these.
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn make_impl_arc(marker_path: std::path::PathBuf) -> Arc<HelperImpl<FakePmset>> {
+        Arc::new(make_impl(marker_path))
+    }
+
+    #[test]
+    fn helper_handle_trait_forwards_set_sleep_prevention() {
+        let dir = tempdir().unwrap();
+        let marker = dir.path().join("marker.flag");
+        let helper = make_impl_arc(marker.clone());
+        let trait_obj: Arc<dyn HelperHandle> = helper.clone();
+
+        trait_obj
+            .handle_set_sleep_prevention(true)
+            .expect("forwarded call should succeed");
+
+        // State must be modified on the SAME underlying HelperImpl — the
+        // trait impl must not silently route to a different instance.
+        assert!(marker.exists());
+        assert!(*helper.pmset.enabled.lock().unwrap());
+    }
+
+    #[test]
+    fn helper_handle_trait_forwards_get_status() {
+        let dir = tempdir().unwrap();
+        let helper = make_impl_arc(dir.path().join("marker.flag"));
+        let trait_obj: Arc<dyn HelperHandle> = helper.clone();
+
+        assert!(!trait_obj.handle_get_status().unwrap());
+        helper.handle_set_sleep_prevention(true).unwrap();
+        // The trait dispatch must read through to the same pmset.
+        assert!(trait_obj.handle_get_status().unwrap());
+    }
+
+    #[test]
+    fn helper_handle_trait_returns_validator_that_rejects_bogus_token() {
+        // The trait's `validator()` getter is consumed by
+        // `ListenerDelegate::shouldAcceptNewConnection` to authorize
+        // incoming peers. Pin the contract that it returns the helper's
+        // own validator (configured with the production code requirement)
+        // and that an all-zero token is rejected — the same baseline that
+        // `client_validator::tests::validator_with_invalid_token_rejects`
+        // pins for `ClientValidator` directly.
+        let dir = tempdir().unwrap();
+        let helper = make_impl_arc(dir.path().join("marker.flag"));
+        let trait_obj: Arc<dyn HelperHandle> = helper;
+
+        let bogus = [0u8; 32];
+        assert!(!trait_obj.validator().allows(bogus));
+    }
 }

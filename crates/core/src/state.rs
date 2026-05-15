@@ -174,4 +174,40 @@ mod tests {
         let outside = Local.with_ymd_and_hms(2026, 5, 11, 20, 0, 0).unwrap();
         assert!(!should_prevent_sleep(&s, outside));
     }
+
+    #[test]
+    fn schedule_allows_inside_window() {
+        // Companion to schedule_blocks_outside_window. The "outside"
+        // case exercises the `return false` arm of the schedule check;
+        // this one exercises the fall-through where the schedule is
+        // present and satisfied. Without both, a regression that always
+        // returned false would only fail the outside test and pass
+        // when no schedule was configured — masking the bug.
+        let mut s = base();
+        s.modifiers.schedule = Some(Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        });
+        // Same noon timestamp as `t()` — inside [09:00, 18:00).
+        assert!(should_prevent_sleep(&s, t()));
+    }
+
+    #[test]
+    fn default_app_state_is_off_with_open_lid_on_ac() {
+        // Default is the "fresh install" baseline. The runtime relies on
+        // these specific defaults: a brand-new install must NOT start
+        // preventing sleep, and the runtime-only fields must resolve to
+        // their conservative readings (lid Open, power AC) so the first
+        // reconcile doesn't trigger a spurious state change before the
+        // platform monitors have published real values.
+        let s = AppState::default();
+        assert!(!s.enabled);
+        assert_eq!(s.modifiers, Modifiers::default());
+        assert!(s.until.is_none());
+        assert_eq!(s.lid, LidState::Open);
+        assert_eq!(s.power, PowerSource::Ac);
+        // And the default must produce no sleep prevention.
+        assert!(!should_prevent_sleep(&s, t()));
+    }
 }
