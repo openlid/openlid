@@ -21,6 +21,14 @@ jobs:
   release:
     name: build, sign, notarize, publish
     runs-on: macos-latest
+    # Only run on initial tag creation or explicit dispatch — never on
+    # tag force-update. `github.event.created` is true only when the ref
+    # is newly created; it's false when an existing tag is force-pushed.
+    # A force-pushed tag would otherwise re-run this workflow, rebuild
+    # the (non-deterministic) DMG, replace the release asset, and reset
+    # GitHub's download counter while breaking any downstream pinned
+    # SHA-256 (Homebrew cask, install scripts, supply-chain refs).
+    if: github.event_name == 'workflow_dispatch' || github.event.created
     steps:
       - uses: actions/checkout@v4
         with:
