@@ -13,7 +13,7 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     if let Err(e) = run() {
-        eprintln!("open-lid: {e:#}");
+        eprintln!("openlid: {e:#}");
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS
@@ -32,7 +32,7 @@ fn run() -> Result<()> {
     }
 }
 
-/// `open-lid` invoked with no arguments. Choose between:
+/// `openlid` invoked with no arguments. Choose between:
 ///   * Foreground menubar — when launched from inside an .app bundle
 ///     (LSUIElement) or any non-TTY context (launchd, supervisors).
 ///   * Detach to background — when invoked from an interactive shell. We
@@ -76,23 +76,23 @@ fn spawn_self_in_background() -> Result<()> {
         });
     }
     let child = cmd.spawn()?;
-    println!("open-lid started in background (pid {}).", child.id());
-    println!("  open-lid status   - show state");
-    println!("  open-lid off      - disable");
-    println!("  pkill open-lid    - stop the menubar app");
+    println!("openlid started in background (pid {}).", child.id());
+    println!("  openlid status   - show state");
+    println!("  openlid off      - disable");
+    println!("  pkill openlid    - stop the menubar app");
     Ok(())
 }
 
 fn setup_logging() -> Result<()> {
     use directories::ProjectDirs;
     use tracing_subscriber::EnvFilter;
-    let dirs = ProjectDirs::from("io", "openlid", "open-lid")
+    let dirs = ProjectDirs::from("io", "openlid", "openlid")
         .ok_or_else(|| anyhow::anyhow!("no home directory"))?;
     let log_dir = dirs
         .data_dir()
         .parent()
         .unwrap_or(dirs.data_dir())
-        .join("Logs/open-lid");
+        .join("Logs/openlid");
     std::fs::create_dir_all(&log_dir).ok();
     let file = tracing_appender::rolling::daily(&log_dir, "app.log");
     tracing_subscriber::fmt()

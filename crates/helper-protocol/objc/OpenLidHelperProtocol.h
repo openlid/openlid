@@ -4,7 +4,7 @@
 // Declared in Objective-C (not built dynamically at runtime) because NSXPC
 // requires the Clang-emitted extended type metadata for block reply handlers.
 //
-// Three production methods mirror open_lid_core::ipc::helper::*:
+// Three production methods mirror openlid_core::ipc::helper::*:
 //   - setSleepPreventionEnabled:withReply:
 //   - getSleepPreventionStatusWithReply:
 //   - pingWithReply:

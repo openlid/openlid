@@ -34,8 +34,8 @@ use objc2::runtime::{AnyObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{NSMenu, NSMenuItem};
 use objc2_foundation::{ns_string, MainThreadMarker, NSObject, NSObjectProtocol, NSString};
-use open_lid_core::ipc::control::Snapshot;
-use open_lid_core::mode::{LidState, PowerSource};
+use openlid_core::ipc::control::Snapshot;
+use openlid_core::mode::{LidState, PowerSource};
 use std::cell::OnceCell;
 use std::sync::Arc;
 

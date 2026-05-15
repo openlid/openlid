@@ -10,7 +10,7 @@ fn main() {
     if profile == "dev" {
         println!("cargo:rustc-cfg=helper_profile_dev");
         println!(
-            "cargo:warning=Building open-lid-helper with DEV code-requirement \
+            "cargo:warning=Building openlid-helper with DEV code-requirement \
              (permissive). Set OPEN_LID_HELPER_PROFILE=prod or leave it unset \
              for release builds."
         );

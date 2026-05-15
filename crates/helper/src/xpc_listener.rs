@@ -340,7 +340,7 @@ define_class!(
             // SAFETY: `protocol()` returns a Clang-emitted Protocol that
             // matches the methods on `Exported` declared above.
             let interface = unsafe {
-                NSXPCInterface::interfaceWithProtocol(open_lid_helper_protocol::protocol())
+                NSXPCInterface::interfaceWithProtocol(openlid_helper_protocol::protocol())
             };
             new_connection.setExportedInterface(Some(&interface));
 

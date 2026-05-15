@@ -719,8 +719,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "open-lid"
-version = "1.0.0"
+name = "openlid"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -735,8 +735,8 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "open-lid-core",
- "open-lid-helper-protocol",
+ "openlid-core",
+ "openlid-helper-protocol",
  "serde",
  "serde_json",
  "tempfile",
@@ -747,8 +747,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-lid-core"
-version = "1.0.0"
+name = "openlid-core"
+version = "2.0.0"
 dependencies = [
  "bitflags",
  "chrono",
@@ -762,8 +762,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-lid-helper"
-version = "1.0.0"
+name = "openlid-helper"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -772,8 +772,8 @@ dependencies = [
  "libc",
  "objc2",
  "objc2-foundation",
- "open-lid-core",
- "open-lid-helper-protocol",
+ "openlid-core",
+ "openlid-helper-protocol",
  "security-framework",
  "security-framework-sys",
  "tempfile",
@@ -783,8 +783,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-lid-helper-protocol"
-version = "1.0.0"
+name = "openlid-helper-protocol"
+version = "2.0.0"
 dependencies = [
  "cc",
  "objc2",
@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.0.0"
+version = "2.0.0"
 
 [[package]]
 name = "zmij"

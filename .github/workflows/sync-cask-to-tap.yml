@@ -1,9 +1,9 @@
 name: sync-cask-to-tap
 
-# Mirrors dist/homebrew/open-lid.rb to openlid/homebrew-tap/Casks/open-lid.rb
+# Mirrors dist/homebrew/openlid.rb to openlid/homebrew-tap/Casks/openlid.rb
 # whenever the in-repo template changes on main, plus manual dispatch.
 #
-# The tap repo is what `brew install --cask openlid/tap/open-lid` actually
+# The tap repo is what `brew install --cask openlid/tap/openlid` actually
 # reads; the in-repo template is the source-of-truth that should stay in
 # lockstep with the tap. Without this workflow they have drifted twice
 # already (SHA-256 rebump in tap commit cb3d350; binary stanza in 8f1bfc6).
@@ -24,7 +24,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'dist/homebrew/open-lid.rb'
+      - 'dist/homebrew/openlid.rb'
   workflow_dispatch:
 
 permissions:
@@ -38,9 +38,9 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     env:
-      SRC: dist/homebrew/open-lid.rb
+      SRC: dist/homebrew/openlid.rb
       DST_REPO: openlid/homebrew-tap
-      DST_PATH: Casks/open-lid.rb
+      DST_PATH: Casks/openlid.rb
     steps:
       - uses: actions/checkout@v6
 
@@ -54,20 +54,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          tap_meta=$(gh api "repos/${DST_REPO}/contents/${DST_PATH}")
-          tap_sha=$(echo "$tap_meta" | jq -r '.sha')
-          echo "tap_sha=${tap_sha}" >> "$GITHUB_OUTPUT"
+          # Fetch tap file metadata. 404 means the tap doesn't have this
+          # cask yet (e.g., right after a cask rename in the source repo) —
+          # treat that as drift so the next step creates the file.
+          if tap_meta=$(gh api "repos/${DST_REPO}/contents/${DST_PATH}" 2>/dev/null); then
+            tap_sha=$(echo "$tap_meta" | jq -r '.sha')
+            echo "tap_sha=${tap_sha}" >> "$GITHUB_OUTPUT"
 
-          tap_decoded=$(mktemp)
-          echo "$tap_meta" | jq -r '.content' | base64 -d > "$tap_decoded"
+            tap_decoded=$(mktemp)
+            echo "$tap_meta" | jq -r '.content' | base64 -d > "$tap_decoded"
 
-          if cmp -s "$SRC" "$tap_decoded"; then
-            echo "drifted=false" >> "$GITHUB_OUTPUT"
-            echo "Tap cask matches dist template — no sync needed."
+            if cmp -s "$SRC" "$tap_decoded"; then
+              echo "drifted=false" >> "$GITHUB_OUTPUT"
+              echo "Tap cask matches dist template — no sync needed."
+            else
+              echo "drifted=true" >> "$GITHUB_OUTPUT"
+              echo "Tap cask differs from dist template:"
+              diff -u "$tap_decoded" "$SRC" || true
+            fi
           else
+            echo "tap_sha=" >> "$GITHUB_OUTPUT"
             echo "drifted=true" >> "$GITHUB_OUTPUT"
-            echo "Tap cask differs from dist template:"
-            diff -u "$tap_decoded" "$SRC" || true
+            echo "Tap cask ${DST_PATH} does not exist yet — will create it."
           fi
 
       - name: sync to openlid/homebrew-tap
@@ -101,11 +109,23 @@ jobs:
           content_b64=$(base64 -w0 "$SRC")
           short_sha=${GITHUB_SHA:0:7}
 
-          gh api -X PUT "repos/${DST_REPO}/contents/${DST_PATH}" \
-            -f message="cask: sync from open-lid@${short_sha}" \
-            -f content="${content_b64}" \
-            -f sha="${TAP_FILE_SHA}" \
-            -f branch=main \
-            >/dev/null
-
-          echo "Cask synced to ${DST_REPO}@main from open-lid@${short_sha}"
+          # An empty TAP_FILE_SHA means the file doesn't exist yet in the
+          # tap (post-rename creation case). The GitHub contents API treats
+          # a PUT with no `sha` as a create, and a PUT with `sha` as an
+          # update; passing an empty string for `sha` would be rejected.
+          if [ -n "${TAP_FILE_SHA}" ]; then
+            gh api -X PUT "repos/${DST_REPO}/contents/${DST_PATH}" \
+              -f message="cask: sync from openlid@${short_sha}" \
+              -f content="${content_b64}" \
+              -f sha="${TAP_FILE_SHA}" \
+              -f branch=main \
+              >/dev/null
+            echo "Cask updated in ${DST_REPO}@main from openlid@${short_sha}"
+          else
+            gh api -X PUT "repos/${DST_REPO}/contents/${DST_PATH}" \
+              -f message="cask: create from openlid@${short_sha}" \
+              -f content="${content_b64}" \
+              -f branch=main \
+              >/dev/null
+            echo "Cask created in ${DST_REPO}@main from openlid@${short_sha}"
+          fi

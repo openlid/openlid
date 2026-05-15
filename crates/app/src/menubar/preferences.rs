@@ -28,7 +28,7 @@ use objc2_app_kit::{
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
-use open_lid_core::ipc::control::Snapshot;
+use openlid_core::ipc::control::Snapshot;
 use std::cell::OnceCell;
 use std::sync::Arc;
 

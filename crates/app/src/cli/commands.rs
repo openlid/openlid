@@ -4,13 +4,13 @@ use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone};
 use interprocess::local_socket::{
     traits::Stream as StreamTrait, GenericFilePath, Stream, ToFsName,
 };
-use open_lid_core::config::Config;
-use open_lid_core::ipc::control::{ControlRequest, ControlResponse, Snapshot};
+use openlid_core::config::Config;
+use openlid_core::ipc::control::{ControlRequest, ControlResponse, Snapshot};
 use std::io::{BufRead, BufReader, Write};
 use std::time::Duration as StdDuration;
 
 fn socket_path() -> Result<std::path::PathBuf> {
-    let dirs = directories::ProjectDirs::from("io", "openlid", "open-lid")
+    let dirs = directories::ProjectDirs::from("io", "openlid", "openlid")
         .ok_or_else(|| anyhow!("no home"))?;
     Ok(dirs.config_dir().join("control.sock"))
 }
@@ -68,7 +68,7 @@ fn print_set_result(resp: ControlResponse) -> Result<()> {
     }
 }
 
-/// `open-lid on` — activate using the user's Default duration preference.
+/// `openlid on` — activate using the user's Default duration preference.
 /// If Default duration is None (indefinite), starts an unbounded session.
 pub fn on_default_duration() -> Result<()> {
     // We have to ask the running app what the user's default is. The simplest
@@ -172,7 +172,10 @@ fn parse_until_at(now: DateTime<Local>, s: &str) -> Result<DateTime<Local>> {
 }
 
 pub fn config(c: ConfigArg) -> Result<()> {
-    let path = Config::default_path()?;
+    // One-shot v1 → v2 migration on first use after upgrade. No-op once v2
+    // config exists. Done here too (not just on menubar launch) so a user
+    // who first invokes the CLI before the GUI still gets their settings.
+    let path = Config::migrate_v1_to_v2()?;
     match c {
         ConfigArg::Path => {
             println!("{}", path.display());
@@ -192,8 +195,8 @@ pub fn config(c: ConfigArg) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_lid_core::ipc::control::HelperStatus;
-    use open_lid_core::mode::{LidState, Modifiers, PowerSource};
+    use openlid_core::ipc::control::HelperStatus;
+    use openlid_core::mode::{LidState, Modifiers, PowerSource};
 
     // ─────────────────────────────────────────────────────────────────────
     // parse_until_at — pure date logic with an injected `now`

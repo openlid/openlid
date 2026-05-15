@@ -20,10 +20,8 @@ use chrono::{Duration, Local};
 use menu::MenuActions;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
-use open_lid_core::config::Config;
-use open_lid_core::platform::{
-    DisplayController, LidObserver, PowerController, PowerSourceMonitor,
-};
+use openlid_core::config::Config;
+use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
 use preferences::{PreferencesWindow, PrefsActions};
 use status_item::{StatusItemUI, UIShared};
 use std::sync::{Arc, OnceLock};
@@ -31,7 +29,7 @@ use std::sync::{Arc, OnceLock};
 pub fn run() -> Result<()> {
     tracing::info!("menubar: starting");
 
-    // Single-instance guard. If another `open-lid menubar` is already running,
+    // Single-instance guard. If another `openlid menubar` is already running,
     // it owns the control socket; we silently exit so launching the .app a
     // second time is a no-op (the standard menu-bar-utility behavior).
     // Without this, every `open -a OpenLid` would spawn a fresh process,
@@ -61,8 +59,10 @@ pub fn run() -> Result<()> {
     let client = Arc::new(HelperClient::new()?);
     let power = Arc::new(HelperPowerController::new(client.clone()));
 
-    // State runtime.
-    let config_path = Config::default_path()?;
+    // State runtime. `migrate_v1_to_v2` is a one-shot no-op once v2's
+    // config exists; on a fresh v1 → v2 upgrade it copies the v1 config to
+    // the v2 path so the user keeps their settings without manual work.
+    let config_path = Config::migrate_v1_to_v2()?;
     let runtime = StateRuntime::new(power, lid, ps, display, config_path)?;
 
     // Spawn the control server (background thread).
@@ -120,7 +120,7 @@ pub fn run() -> Result<()> {
 
 /// Probe whether a running menubar instance owns the control socket. We
 /// attempt to connect; success means another process is listening — i.e.,
-/// another `open-lid menubar` is already alive. A non-existent socket file
+/// another `openlid menubar` is already alive. A non-existent socket file
 /// or `ECONNREFUSED` (stale socket from a crashed instance) both return
 /// `false`, in which case the caller can safely take over.
 ///

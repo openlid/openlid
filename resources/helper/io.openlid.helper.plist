@@ -14,7 +14,7 @@
         rewritten to use ProgramArguments with an absolute path.
     -->
     <key>BundleProgram</key>
-    <string>Contents/MacOS/open-lid-helper</string>
+    <string>Contents/MacOS/openlid-helper</string>
 
     <key>MachServices</key>
     <dict>

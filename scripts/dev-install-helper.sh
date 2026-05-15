@@ -9,9 +9,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-cargo build -p open-lid-helper
+cargo build -p openlid-helper
 
-ABS_HELPER_PATH="$PWD/target/debug/open-lid-helper"
+ABS_HELPER_PATH="$PWD/target/debug/openlid-helper"
 codesign --force --sign - --options runtime "$ABS_HELPER_PATH"
 
 TMP_PLIST="$(mktemp)"
@@ -25,4 +25,4 @@ rm "$TMP_PLIST"
 
 sudo launchctl bootout system/io.openlid.helper 2>/dev/null || true
 sudo launchctl bootstrap system /Library/LaunchDaemons/io.openlid.helper.plist
-echo "Helper installed and bootstrapped. Log: /Library/Logs/open-lid/helper.log"
+echo "Helper installed and bootstrapped. Log: /Library/Logs/openlid/helper.log"

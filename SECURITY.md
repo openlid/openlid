@@ -35,7 +35,7 @@ Specifically out of scope:
 
 - **User installs malicious app pretending to be Open-Lid** — covered by
   macOS Gatekeeper / notarization, not our application
-- **User runs Open-Lid as root** (`sudo open-lid`) — Open-Lid is not
+- **User runs Open-Lid as root** (`sudo openlid`) — Open-Lid is not
   designed to be run as root; the helper is the only root component
 - **System sleep policy after legitimate `pmset disablesleep` call** — that's
   the documented behavior of Open-Lid
@@ -49,7 +49,7 @@ prefixed `[Open-Lid Security]`. Include:
 
 - A description of the vulnerability
 - Steps to reproduce, or a proof-of-concept
-- Open-Lid version (`open-lid --version`)
+- Open-Lid version (`openlid --version`)
 - macOS version (`sw_vers -productVersion`)
 - Your assessment of impact
 

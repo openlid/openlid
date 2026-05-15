@@ -28,39 +28,21 @@ ICONSET="${TMP_DIR}/AppIcon.iconset"
 # 1. Source SVG.
 #
 # A rounded-square (~21.5% corner radius — matches Apple's macOS "squircle"
-# approximation) with a subtle gradient and the Tabler `device-laptop` glyph
-# in white. Tabler paths are MIT-licensed.
+# approximation) in flat teal, with the Tabler `device-laptop` glyph in white.
+# The viewBox area outside the squircle is left transparent so the icon sits
+# cleanly against any background. Tabler paths are MIT-licensed.
 # ─────────────────────────────────────────────────────────────────────────────
 cat > "$SVG_PATH" <<'EOF'
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%"   stop-color="#1E293B"/>
-      <stop offset="100%" stop-color="#1E40AF"/>
-    </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
+  <!-- Squircle background. Corners outside the rx/ry are transparent. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="#2688a8"/>
 
-  <!-- Squircle background -->
-  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="url(#bg)"/>
-
-  <!-- Tabler device-laptop glyph, scaled from 24×24 viewBox to ~560×560 -->
-  <!-- Original paths:
-         M3 19 l18 0
-         M5 7 a1 1 0 0 1 1-1 h12 a1 1 0 0 1 1 1 v8 a1 1 0 0 1-1 1 h-12 a1 1 0 0 1-1-1 l0-8
-       Scaled to a 600pt design grid centered at (512,512): 1 unit = 25pt,
-       so translate(-12,-12) then scale(25) centers (12,12) → (0,0) → (512,512).
-       Translation: shift by (512 - 12*25, 512 - 12*25) = (212, 212). -->
+  <!-- Tabler device-laptop glyph, scaled from 24×24 viewBox onto a 600pt
+       design grid centered at (512,512). 1 unit = 25pt; translate(212,212)
+       then scale(25) puts the glyph's (12,12) at the canvas centre. -->
   <g transform="translate(212, 212) scale(25)"
      fill="none" stroke="#FFFFFF" stroke-width="2"
-     stroke-linecap="round" stroke-linejoin="round"
-     filter="url(#glow)">
+     stroke-linecap="round" stroke-linejoin="round">
     <path d="M3 19 l18 0"/>
     <path d="M5 7 a1 1 0 0 1 1-1 h12 a1 1 0 0 1 1 1 v8 a1 1 0 0 1-1 1 h-12 a1 1 0 0 1-1-1 l0-8"/>
   </g>

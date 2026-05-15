@@ -8,7 +8,7 @@ use super::iokit_ffi::{
 };
 use core_foundation::base::TCFType;
 use core_foundation::string::CFString;
-use open_lid_core::platform::{DisplayController, PlatformError};
+use openlid_core::platform::{DisplayController, PlatformError};
 use std::process::Command;
 use std::sync::Mutex;
 

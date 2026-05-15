@@ -7,15 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [2.0.0] - 2026-05-15
 
-- **Homebrew cask now puts `open-lid` on `$PATH`.** Added a `binary` stanza
-  that symlinks `/Applications/OpenLid.app/Contents/MacOS/open-lid` into
-  `$HOMEBREW_PREFIX/bin/`, so `brew install --cask openlid/tap/open-lid`
-  alone is enough to use the CLI from the terminal — no separate
-  `install-cli-symlink.sh` step. The symlink is brew-managed and removed
-  automatically on `brew uninstall --cask open-lid`. The from-source flow
-  is unchanged.
+The rebrand release. The hyphenated `open-lid` name has been retired
+everywhere the user can see it — terminal command, cask, Cargo crates,
+configuration directory. The GitHub repo URL and the macOS bundle IDs
+(`io.openlid.app`, `io.openlid.helper`) are unchanged. v1.x users get
+their config auto-migrated on first launch of v2.0.
+
+### Changed (breaking)
+
+- **CLI binary renamed `open-lid` → `openlid`.** Every invocation in scripts
+  needs to be updated; `open-lid status` is now `openlid status`. Per
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), renaming the CLI surface
+  requires a major-version bump; this release is that bump.
+- **Cask renamed `open-lid` → `openlid`.** Install is now
+  `brew install --cask openlid/tap/openlid`. Existing v1 cask installs
+  must be removed first: `brew uninstall --cask open-lid && brew install --cask openlid/tap/openlid`.
+  The new cask's `binary` stanza puts `openlid` directly on `$PATH` — no
+  separate `install-cli-symlink.sh` step.
+- **Cargo crates renamed.** `open-lid` → `openlid`, `open-lid-core` →
+  `openlid-core`, `open-lid-helper` → `openlid-helper`,
+  `open-lid-helper-protocol` → `openlid-helper-protocol`. Downstream
+  consumers that depend on these crates need to update their `Cargo.toml`.
+- **Configuration directory changed.** Was
+  `~/Library/Application Support/io.openlid.open-lid/`; now
+  `~/Library/Application Support/io.openlid.app/` (matching the app's
+  bundle ID, ending the redundant hyphenated suffix). v1 users do not
+  need to copy files — v2 reads the v1 directory on first launch if the
+  v2 directory doesn't exist yet, then writes to the v2 path going
+  forward. The v1 directory is left in place for safety; users can
+  `rm -rf ~/Library/Application\ Support/io.openlid.open-lid` once v2 is
+  confirmed working.
+- **Log directories changed.** `~/Library/Logs/open-lid/` →
+  `~/Library/Logs/openlid/`. System-side
+  `/Library/Application Support/open-lid/sleep-prevention.enabled` →
+  `/Library/Application Support/openlid/sleep-prevention.enabled`.
+- **Privileged helper binary renamed `open-lid-helper` → `openlid-helper`.**
+  The launchd plist (`io.openlid.helper.plist`) is unchanged in name, but
+  its `ProgramArguments` now points to the renamed binary. v1 → v2
+  upgrade reinstalls the helper via `SMAppService` on first launch.
+
+### Added
+
+- **New app icon.** Flat teal (`#2688a8`) squircle with a white Tabler
+  laptop glyph. Background corners are transparent so the icon composites
+  cleanly against any wallpaper. Regeneratable from
+  [scripts/generate-icon.sh](scripts/generate-icon.sh) — same toolchain
+  as before (`qlmanage` + `sips` + `iconutil`, no Homebrew dependencies).
+- **Auto-migration of v1 config on first launch.** On startup, v2 checks
+  whether `~/Library/Application Support/io.openlid.app/config.toml`
+  exists; if not but `io.openlid.open-lid/config.toml` does, v2 reads
+  from the v1 path. The next write lands at the v2 path.
+
+### Migration guide
+
+For brew installs:
+
+```bash
+brew uninstall --cask open-lid
+brew install --cask openlid/tap/openlid
+```
+
+For from-source installs:
+
+```bash
+git pull
+cargo install --path crates/app  # rebuilds as `openlid`
+```
+
+For scripts/automations that call the CLI: replace `open-lid` with `openlid`.
+
+For dependents of the Rust crates: rename in your `Cargo.toml`:
+
+```toml
+# v1.x
+open-lid-core = "1"
+# v2.0
+openlid-core = "2"
+```
 
 ## [1.0.0] - 2026-05-14
 
@@ -176,7 +246,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/open-lid/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/openlid/open-lid/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/openlid/open-lid/releases/tag/v2.0.0
 [1.0.0]: https://github.com/openlid/open-lid/releases/tag/v1.0.0
 [0.2.0]: https://github.com/openlid/open-lid/releases/tag/v0.2.0
 [0.1.0]: https://github.com/openlid/open-lid/releases/tag/v0.1.0
