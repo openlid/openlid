@@ -48,11 +48,14 @@ fn call_register_or_unregister(register: bool) -> Result<()> {
     let cls = objc2::runtime::AnyClass::get(c"SMAppService")
         .ok_or_else(|| anyhow!("SMAppService class not available (macOS 13+ required)"))?;
 
-    // SAFETY: +mainApp is a documented class method returning a Retained
-    // SMAppService instance.
+    // SAFETY: +mainApp is a documented class method. It returns an
+    // *autoreleased* SMAppService — per Cocoa method-family conventions, only
+    // alloc/new/copy/mutableCopy/init give the caller +1 ownership. We must
+    // retain via `Retained::retain` (which calls `objc_retain`); using
+    // `Retained::from_raw` would double-release on autorelease-pool drain.
     let service: Retained<AnyObject> = unsafe {
         let raw: *mut AnyObject = msg_send![cls, mainApp];
-        Retained::from_raw(raw).ok_or_else(|| anyhow!("SMAppService.mainApp returned nil"))?
+        Retained::retain(raw).ok_or_else(|| anyhow!("SMAppService.mainApp returned nil"))?
     };
 
     let mut err_ptr: *mut NSError = std::ptr::null_mut();
