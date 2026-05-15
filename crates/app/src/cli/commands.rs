@@ -327,4 +327,23 @@ mod tests {
             "got: {out}",
         );
     }
+
+    // Skip this test when a real v1 config file lives at the legacy path —
+    // `config()` calls `migrate_v1_to_v2` which would actually migrate it
+    // into the developer's real v2 dir. CI always passes this guard.
+    fn has_real_v1_config() -> bool {
+        Config::v1_legacy_path().is_some_and(|p| p.exists())
+    }
+
+    #[test]
+    fn config_path_command_does_not_error() {
+        if has_real_v1_config() {
+            eprintln!("skipping: real v1 config exists on this machine");
+            return;
+        }
+        // `ConfigArg::Path` just prints the path — no editor, no read of
+        // the file. It exercises the `migrate_v1_to_v2 → match → Path arm`
+        // path which is otherwise uncovered.
+        config(ConfigArg::Path).expect("config path arm should succeed");
+    }
 }
