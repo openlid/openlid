@@ -8,8 +8,8 @@ use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetMain};
 use core_foundation::string::CFString;
-use open_lid_core::mode::LidState;
-use open_lid_core::platform::{LidObserver, LidStateCallback};
+use openlid_core::mode::LidState;
+use openlid_core::platform::{LidObserver, LidStateCallback};
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 

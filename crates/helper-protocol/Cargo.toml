@@ -1,5 +1,5 @@
 [package]
-name = "open-lid-helper-protocol"
+name = "openlid-helper-protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -15,7 +15,7 @@ use objc2::runtime::AnyObject;
 use objc2::sel;
 use objc2_app_kit::{NSEventMask, NSStatusBar, NSStatusItem, NSVariableStatusItemLength};
 use objc2_foundation::{MainThreadMarker, NSString};
-use open_lid_core::ipc::control::Snapshot;
+use openlid_core::ipc::control::Snapshot;
 use std::sync::Arc;
 
 /// All AppKit refs we need to mutate after the initial build. Shared between

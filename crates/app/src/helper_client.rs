@@ -35,7 +35,7 @@ use objc2::{msg_send, AnyThread};
 use objc2_foundation::{
     NSError, NSString, NSXPCConnection, NSXPCConnectionOptions, NSXPCInterface,
 };
-use open_lid_core::platform::{PlatformError, PowerController};
+use openlid_core::platform::{PlatformError, PowerController};
 use std::ffi::CStr;
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -160,10 +160,10 @@ impl HelperClient {
         // The remote interface metadata MUST be a Clang-emitted Protocol —
         // see the spike findings doc, section 7a, on why `ProtocolBuilder`
         // is insufficient for NSXPC.
-        // SAFETY: `open_lid_helper_protocol::protocol()` returns a static
+        // SAFETY: `openlid_helper_protocol::protocol()` returns a static
         // pointer to the Clang-emitted `OpenLidHelperProtocol` metadata.
         let interface =
-            unsafe { NSXPCInterface::interfaceWithProtocol(open_lid_helper_protocol::protocol()) };
+            unsafe { NSXPCInterface::interfaceWithProtocol(openlid_helper_protocol::protocol()) };
         conn.setRemoteObjectInterface(Some(&interface));
 
         // Lifecycle handlers. These are NOT reply blocks, so NSXPC does not

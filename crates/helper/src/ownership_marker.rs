@@ -7,7 +7,7 @@ use anyhow::Result;
 use std::path::Path;
 use std::path::PathBuf;
 
-const MARKER_PATH: &str = "/Library/Application Support/open-lid/sleep-prevention.enabled";
+const MARKER_PATH: &str = "/Library/Application Support/openlid/sleep-prevention.enabled";
 
 pub struct OwnershipMarker {
     path: PathBuf,

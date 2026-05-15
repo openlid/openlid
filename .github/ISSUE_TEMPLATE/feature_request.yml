@@ -60,7 +60,7 @@ body:
     attributes:
       label: Pre-submission checks
       options:
-        - label: I searched [existing issues and discussions](https://github.com/openlid/open-lid/issues?q=is%3Aissue) for similar requests.
+        - label: I searched [existing issues and discussions](https://github.com/openlid/openlid/issues?q=is%3Aissue) for similar requests.
           required: true
         - label: I read the CONTRIBUTING guide's "What kinds of contributions are welcome" section.
           required: true

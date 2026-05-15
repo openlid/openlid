@@ -4,13 +4,11 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use open_lid_core::config::Config;
-use open_lid_core::ipc::control::Snapshot;
-use open_lid_core::mode::{LidState, PowerSource};
-use open_lid_core::platform::{
-    DisplayController, LidObserver, PowerController, PowerSourceMonitor,
-};
-use open_lid_core::state::{should_prevent_sleep, AppState};
+use openlid_core::config::Config;
+use openlid_core::ipc::control::Snapshot;
+use openlid_core::mode::{LidState, PowerSource};
+use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
+use openlid_core::state::{should_prevent_sleep, AppState};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -245,7 +243,7 @@ where
             modifiers: s.modifiers.clone(),
             lid: s.lid,
             power: s.power,
-            helper: open_lid_core::ipc::control::HelperStatus::Running,
+            helper: openlid_core::ipc::control::HelperStatus::Running,
             start_at_login: cfg.start_at_login,
             activate_at_launch: cfg.activate_at_launch,
             default_duration_minutes: cfg.default_duration_minutes,
@@ -412,7 +410,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_lid_core::platform::PlatformError;
+    use openlid_core::platform::PlatformError;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     #[derive(Default)]
@@ -433,7 +431,7 @@ mod tests {
 
     struct MockLid {
         state: Mutex<LidState>,
-        cb: Mutex<Option<open_lid_core::platform::LidStateCallback>>,
+        cb: Mutex<Option<openlid_core::platform::LidStateCallback>>,
     }
     impl MockLid {
         fn new(s: LidState) -> Self {
@@ -456,14 +454,14 @@ mod tests {
         fn current(&self) -> LidState {
             *self.state.lock().unwrap()
         }
-        fn subscribe(&self, cb: open_lid_core::platform::LidStateCallback) {
+        fn subscribe(&self, cb: openlid_core::platform::LidStateCallback) {
             *self.cb.lock().unwrap() = Some(cb);
         }
     }
 
     #[derive(Default)]
     struct MockPs {
-        cb: Mutex<Option<open_lid_core::platform::PowerSourceCallback>>,
+        cb: Mutex<Option<openlid_core::platform::PowerSourceCallback>>,
         initial: Mutex<PowerSource>,
     }
     impl MockPs {
@@ -480,7 +478,7 @@ mod tests {
         fn current(&self) -> PowerSource {
             *self.initial.lock().unwrap()
         }
-        fn subscribe(&self, cb: open_lid_core::platform::PowerSourceCallback) {
+        fn subscribe(&self, cb: openlid_core::platform::PowerSourceCallback) {
             *self.cb.lock().unwrap() = Some(cb);
         }
     }
@@ -978,7 +976,7 @@ mod tests {
         rt.set_enabled(true, None).unwrap();
         assert!(disp.held.load(Ordering::SeqCst));
         assert!(
-            open_lid_core::config::Config::load(&cfg_path)
+            openlid_core::config::Config::load(&cfg_path)
                 .unwrap()
                 .enabled,
             "precondition: set_enabled(true) should persist enabled = true"
@@ -995,7 +993,7 @@ mod tests {
         // "restore last state" comes up as On — which is what the user
         // had configured.
         assert!(
-            open_lid_core::config::Config::load(&cfg_path)
+            openlid_core::config::Config::load(&cfg_path)
                 .unwrap()
                 .enabled,
             "shutdown_cleanup must not flip persisted enabled"

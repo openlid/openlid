@@ -3,15 +3,15 @@ members = ["crates/core", "crates/helper-protocol", "crates/app", "crates/helper
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.88"
 license = "Apache-2.0"
-repository = "https://github.com/openlid/open-lid"
+repository = "https://github.com/openlid/openlid"
 
 [workspace.dependencies]
 # Internal
-open-lid-core = { path = "crates/core" }
+openlid-core = { path = "crates/core" }
 
 # Apple bindings (versions verified by Phase 0 spike)
 objc2 = { version = "0.6", features = ["exception"] }

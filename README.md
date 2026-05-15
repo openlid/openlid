@@ -6,12 +6,12 @@
 
 **Keep your laptop awake — even with the lid closed.**
 
-[![CI](https://github.com/openlid/open-lid/actions/workflows/ci.yml/badge.svg)](https://github.com/openlid/open-lid/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/openlid/open-lid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/open-lid)
+[![CI](https://github.com/openlid/openlid/actions/workflows/ci.yml/badge.svg)](https://github.com/openlid/openlid/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/openlid/openlid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/openlid)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/openlid/open-lid)](https://github.com/openlid/open-lid/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/openlid/open-lid/total)](https://github.com/openlid/open-lid/releases)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/open-lid)
+[![GitHub release](https://img.shields.io/github/v/release/openlid/openlid)](https://github.com/openlid/openlid/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/openlid/openlid/total)](https://github.com/openlid/openlid/releases)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/openlid)
 
 </div>
 
@@ -20,7 +20,7 @@ the lid open or closed. Carry it around with a long build, an agent, or
 a download running; or step away from your desk without having the OS
 lock the screen and dim the display every time you check your phone.
 
-Built in Rust with a platform-abstraction layer in `open-lid-core` so the
+Built in Rust with a platform-abstraction layer in `openlid-core` so the
 state machine and CLI are OS-independent. The macOS implementation calls
 IOKit + AppKit + ServiceManagement; the Linux implementation (planned)
 will call logind via D-Bus.
@@ -76,9 +76,9 @@ battery gets low.
   - Auto-deactivate below a configurable battery percent
 - **First-class CLI** for scripting:
   ```
-  open-lid on / off / status
-  open-lid for 2h
-  open-lid until 18:00
+  openlid on / off / status
+  openlid for 2h
+  openlid until 18:00
   ```
 - **Single-instance** — running `open -a OpenLid` twice is a no-op.
 - **No telemetry. No data leaves your machine. Ever.**
@@ -88,24 +88,24 @@ battery gets low.
 > [!IMPORTANT]
 > Installation today is macOS-only. Linux installation instructions
 > will land here once the Linux backend ships in v1.x. If you'd find
-> Open-Lid useful on Linux, please [open an issue](https://github.com/openlid/open-lid/issues/new/choose)
+> Open-Lid useful on Linux, please [open an issue](https://github.com/openlid/openlid/issues/new/choose)
 > describing your distro and use case — it helps prioritize.
 
 ### Download the signed DMG (recommended) — macOS
 
 ```bash
 # Homebrew tap:
-brew install --cask openlid/tap/open-lid
+brew install --cask openlid/tap/openlid
 
 # Or download the DMG directly:
-# https://github.com/openlid/open-lid/releases/latest
+# https://github.com/openlid/openlid/releases/latest
 ```
 
 After installing, launch Open-Lid; macOS will prompt you to enable it in
 **System Settings → General → Login Items → Allow in the Background**.
 Flip the Open-Lid toggle on — no admin password required.
 
-The brew install also puts `open-lid` on your `PATH`, so you can drive
+The brew install also puts `openlid` on your `PATH`, so you can drive
 everything from the terminal — see [CLI](#cli) below.
 
 ### From source — macOS
@@ -114,13 +114,13 @@ Prerequisites: macOS 13+ on Apple Silicon, Rust 1.88+, Xcode Command Line
 Tools.
 
 ```bash
-git clone https://github.com/openlid/open-lid.git
-cd open-lid
+git clone https://github.com/openlid/openlid.git
+cd openlid
 
 # Build (ad-hoc-signed, dev profile), install into /Applications, refresh caches:
 ./scripts/install.sh
 
-# Optional: put `open-lid` on your PATH:
+# Optional: put `openlid` on your PATH:
 ./scripts/install-cli-symlink.sh
 
 # Launch:
@@ -158,12 +158,12 @@ Quit Open-Lid   ⌘Q
 
 | Command | What it does |
 |---|---|
-| `open-lid on` | Activate using your Default duration preference |
-| `open-lid off` | Deactivate |
-| `open-lid status` | Print current state. Use `--json` for machine-readable output. |
-| `open-lid for <duration>` | Activate with a timer, e.g. `30m`, `2h`, `1h30m` |
-| `open-lid until <time>` | Activate until `HH:MM` today (rolls over to tomorrow if past) |
-| `open-lid config show / path / edit` | Inspect / edit config at `~/Library/Application Support/io.openlid.open-lid/config.toml` |
+| `openlid on` | Activate using your Default duration preference |
+| `openlid off` | Deactivate |
+| `openlid status` | Print current state. Use `--json` for machine-readable output. |
+| `openlid for <duration>` | Activate with a timer, e.g. `30m`, `2h`, `1h30m` |
+| `openlid until <time>` | Activate until `HH:MM` today (rolls over to tomorrow if past) |
+| `openlid config show / path / edit` | Inspect / edit config at `~/Library/Application Support/io.openlid.app/config.toml` |
 
 ### Preferences
 
@@ -178,7 +178,7 @@ Open the menu and click **Preferences…** (or ⌘,) to configure:
   and the screen doesn't lock on idle. Turn it off if you'd rather the
   screen lock on idle even while Open-Lid is on; system sleep prevention
   still works.
-- **Default duration** — what `open-lid on` and a single menu-bar click
+- **Default duration** — what `openlid on` and a single menu-bar click
   use. Defaults to *Indefinitely*.
 - **Turn off below battery %** — auto-deactivate when battery falls below
   the threshold. Does not auto-reactivate when battery recovers; the user
@@ -189,7 +189,7 @@ Open the menu and click **Preferences…** (or ⌘,) to configure:
 Two cooperating mechanisms:
 
 1. **System-sleep prevention** — a privileged launchd daemon
-   (`open-lid-helper`) is the only component that can call `pmset -a
+   (`openlid-helper`) is the only component that can call `pmset -a
    disablesleep` (which requires root). The menu-bar app and CLI both
    talk to that daemon over NSXPC. The helper validates incoming
    connections by code-signature requirement string and auto-exits after
@@ -205,7 +205,7 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design.
 
 ## Configuration file
 
-`~/Library/Application Support/io.openlid.open-lid/config.toml`:
+`~/Library/Application Support/io.openlid.app/config.toml`:
 
 ```toml
 enabled = false                       # last toggle state (persisted)
@@ -224,10 +224,10 @@ min_battery = 20
 
 Open-Lid does not collect, transmit, or store any user data. No telemetry.
 No analytics. No automatic update checks. All state stays on your machine
-in `~/Library/Application Support/io.openlid.open-lid/`.
+in `~/Library/Application Support/io.openlid.app/`.
 
 The privileged helper writes a small marker file at
-`/Library/Application Support/open-lid/sleep-prevention.enabled` while sleep
+`/Library/Application Support/openlid/sleep-prevention.enabled` while sleep
 is overridden — this lets it recover gracefully if the helper restarts
 after a crash.
 
@@ -236,8 +236,8 @@ after a crash.
 ```bash
 ./scripts/dev-uninstall-helper.sh       # unloads helper + removes plist
 rm -rf /Applications/OpenLid.app
-rm -rf "~/Library/Application Support/io.openlid.open-lid"
-sudo rm -f /usr/local/bin/open-lid
+rm -rf "~/Library/Application Support/io.openlid.app"
+sudo rm -f /usr/local/bin/openlid
 ```
 
 ## Troubleshooting
@@ -247,7 +247,7 @@ v0.2+ registers the helper automatically via `SMAppService` — but the
 user has to approve it in **System Settings → General → Login Items →
 Allow in the Background**. If you've ignored that prompt, click the menu
 bar icon and the menu will show an approval hint. Then check
-`~/Library/Application Support/Logs/open-lid/app.log.<today>` for errors.
+`~/Library/Application Support/Logs/openlid/app.log.<today>` for errors.
 
 **"Apple cannot verify this app" on download** — Should not appear on
 v0.2+ (the DMG is notarized). If you see it on a build from source, that's
@@ -260,7 +260,7 @@ the new install script cleans it up automatically.
 
 **Sleep is still happening when I close the lid** — Check `pmset -g | grep
 SleepDisabled`. If it shows `0`, the helper isn't being asked to override
-sleep. Verify Open-Lid is *on* (`open-lid status` should say "ON
+sleep. Verify Open-Lid is *on* (`openlid status` should say "ON
 (preventing sleep now)" with the lid closed).
 
 **Screen still locks on idle while Open-Lid is on** — by default,
@@ -287,14 +287,14 @@ prevented; only the display-idle assertion is dropped.
   [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 - [ ] **v1.x — Linux support.** Linux backend talking to systemd-logind
   via D-Bus (`Inhibit("sleep:handle-lid-switch")`), wired into the
-  existing `open-lid-core` platform traits. UI shape TBD — either a
+  existing `openlid-core` platform traits. UI shape TBD — either a
   GTK/Qt tray icon or a headless daemon driven by the CLI; tracked in
   the v1.x design discussion.
 - [ ] **v2.x — Windows on demand.** Windows backend
   (`SetThreadExecutionState` + `WM_POWERBROADCAST`) ships if there's
-  user demand. The `open-lid-core` platform traits are already
+  user demand. The `openlid-core` platform traits are already
   cross-platform-shaped, so this is a backend addition, not a rewrite.
-  [Open an issue](https://github.com/openlid/open-lid/issues/new/choose)
+  [Open an issue](https://github.com/openlid/openlid/issues/new/choose)
   to register interest.
 
 ## Contributing

@@ -1,4 +1,4 @@
-//! open-lid-helper — the privileged daemon.
+//! openlid-helper — the privileged daemon.
 //!
 //! Loaded by launchd as root. Listens for NSXPC connections from the
 //! menubar app, validates them by code requirement, toggles
@@ -64,13 +64,13 @@ fn active_requirement() -> &'static str {
 fn main() -> Result<()> {
     setup_logging()?;
     guard_launched_by_launchd()?;
-    tracing::info!("open-lid-helper starting (pid {})", std::process::id());
+    tracing::info!("openlid-helper starting (pid {})", std::process::id());
 
     let pmset = Arc::new(pmset::RealPmset);
     let marker = Arc::new(ownership_marker::OwnershipMarker::new());
     let requirement = active_requirement();
     tracing::info!(
-        "open-lid-helper using {} code-requirement profile",
+        "openlid-helper using {} code-requirement profile",
         if cfg!(helper_profile_dev) {
             "DEV (permissive — local builds only)"
         } else {
@@ -109,7 +109,7 @@ fn main() -> Result<()> {
 fn setup_logging() -> Result<()> {
     use tracing_subscriber::EnvFilter;
 
-    let log_dir = std::path::Path::new("/Library/Logs/open-lid");
+    let log_dir = std::path::Path::new("/Library/Logs/openlid");
     std::fs::create_dir_all(log_dir).ok();
     let file = tracing_appender::rolling::daily(log_dir, "helper.log");
     tracing_subscriber::fmt()
@@ -126,7 +126,7 @@ fn guard_launched_by_launchd() -> Result<()> {
     let ppid = unsafe { libc::getppid() };
     let stdin_is_tty = unsafe { libc::isatty(std::io::stdin().as_raw_fd()) } == 1;
     if ppid != 1 || stdin_is_tty {
-        anyhow::bail!("open-lid-helper must be loaded by launchd, not invoked directly");
+        anyhow::bail!("openlid-helper must be loaded by launchd, not invoked directly");
     }
     Ok(())
 }

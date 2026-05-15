@@ -13,10 +13,13 @@ use thiserror::Error;
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// Persisted user configuration. Lives at
-/// `~/Library/Application Support/io.openlid.open-lid/config.toml` on
+/// `~/Library/Application Support/io.openlid.app/config.toml` on
 /// macOS — the path is computed by `directories::ProjectDirs` from the
-/// reverse-DNS triple `("io", "openlid", "open-lid")`, not the friendly
-/// `open-lid` short name.
+/// reverse-DNS triple `("io", "openlid", "app")`, which matches the
+/// `Info.plist` bundle ID rather than the CLI/cask name. v1.x wrote
+/// to `io.openlid.open-lid/`; [`Config::load_with_v1_fallback`] reads
+/// from the v1 path on first launch when the v2 path doesn't exist
+/// yet, then writes lands at v2 going forward.
 ///
 /// Fields are partitioned into three groups:
 ///   * Toggle state: `enabled` (persisted so "Restore last state" on launch
@@ -120,8 +123,59 @@ pub enum ConfigError {
 
 impl Config {
     pub fn default_path() -> Result<PathBuf, ConfigError> {
-        let dirs = ProjectDirs::from("io", "openlid", "open-lid").ok_or(ConfigError::NoHome)?;
+        let dirs = ProjectDirs::from("io", "openlid", "app").ok_or(ConfigError::NoHome)?;
         Ok(dirs.config_dir().join("config.toml"))
+    }
+
+    /// Path the v1.x build wrote to:
+    /// `~/Library/Application Support/io.openlid.open-lid/config.toml` on
+    /// macOS. Returned only when `ProjectDirs` resolves. Used by
+    /// [`Config::load_with_v1_fallback`] to migrate users from v1 to v2 on
+    /// first launch without making them copy files by hand.
+    pub fn v1_legacy_path() -> Option<PathBuf> {
+        ProjectDirs::from("io", "openlid", "open-lid").map(|d| d.config_dir().join("config.toml"))
+    }
+
+    /// Ensure the v2 config exists, copying it from the v1 path if needed.
+    /// Returns the v2 path so callers can `Config::load` it normally.
+    ///
+    /// This is the one-shot v1 → v2 migration: when the v2 file is absent
+    /// and the v1 file is present, the v1 contents are written to the v2
+    /// path. The v1 file is left in place so users can roll back. Once
+    /// the v2 file exists, subsequent calls are no-ops.
+    ///
+    /// Call this at startup before any other config read. Keeping the
+    /// migration here (rather than inside `Config::load`) keeps `load`
+    /// hermetic for tests and makes the side effect (writing the v2 file)
+    /// explicit at call sites that actually want it.
+    pub fn migrate_v1_to_v2() -> Result<PathBuf, ConfigError> {
+        let v2 = Self::default_path()?;
+        let v1 = Self::v1_legacy_path();
+        Self::migrate_v1_to_v2_paths(&v2, v1.as_deref())?;
+        Ok(v2)
+    }
+
+    fn migrate_v1_to_v2_paths(v2: &Path, v1: Option<&Path>) -> Result<(), ConfigError> {
+        if v2.try_exists().unwrap_or(false) {
+            return Ok(());
+        }
+        let Some(v1_path) = v1 else {
+            return Ok(());
+        };
+        if !v1_path.try_exists().unwrap_or(false) {
+            return Ok(());
+        }
+        let cfg = Self::load(v1_path)?;
+        cfg.save(v2)?;
+        // Pre-bind the Display strings so llvm-cov can track them. `tracing`
+        // evaluates `%value` lazily inside the macro — if no subscriber is
+        // installed (as in tests), the inner expression never runs and the
+        // line is reported uncovered. Materializing to a String pulls the
+        // call up to a regular line-level statement.
+        let from = v1_path.display().to_string();
+        let to = v2.display().to_string();
+        tracing::info!(legacy = %from, target = %to, "migrated v1 config to v2 path");
+        Ok(())
     }
 
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
@@ -199,6 +253,111 @@ mod tests {
         cfg.save(&p).unwrap();
         let back = Config::load(&p).unwrap();
         assert_eq!(cfg, back);
+    }
+
+    #[test]
+    fn migrate_copies_v1_to_v2_when_v2_missing() {
+        let dir = tempdir().unwrap();
+        let v1 = dir.path().join("v1/config.toml");
+        let v2 = dir.path().join("v2/config.toml");
+
+        let v1_cfg = Config {
+            version: 1,
+            enabled: true,
+            modifiers: Modifiers::default(),
+            start_at_login: true,
+            activate_at_launch: false,
+            default_duration_minutes: Some(45),
+            battery_threshold_pct: None,
+            prevent_display_sleep: true,
+        };
+        v1_cfg.save(&v1).unwrap();
+
+        Config::migrate_v1_to_v2_paths(&v2, Some(&v1)).unwrap();
+
+        assert!(v2.exists(), "migration must materialize the v2 file");
+        let migrated = Config::load(&v2).unwrap();
+        assert_eq!(migrated, v1_cfg, "v2 contents must match v1");
+        assert!(v1.exists(), "v1 must be preserved for rollback");
+    }
+
+    #[test]
+    fn migrate_is_noop_when_v2_already_exists() {
+        let dir = tempdir().unwrap();
+        let v1 = dir.path().join("v1/config.toml");
+        let v2 = dir.path().join("v2/config.toml");
+
+        let v1_cfg = Config {
+            enabled: true,
+            ..Config::default()
+        };
+        v1_cfg.save(&v1).unwrap();
+
+        // v2 already has a different config; migration must not touch it.
+        let v2_cfg = Config {
+            default_duration_minutes: Some(120),
+            ..Config::default()
+        };
+        v2_cfg.save(&v2).unwrap();
+
+        Config::migrate_v1_to_v2_paths(&v2, Some(&v1)).unwrap();
+
+        let loaded = Config::load(&v2).unwrap();
+        assert_eq!(loaded, v2_cfg, "v2 must not be overwritten by v1");
+    }
+
+    #[test]
+    fn migrate_is_noop_when_v1_missing() {
+        let dir = tempdir().unwrap();
+        let v1 = dir.path().join("v1/config.toml");
+        let v2 = dir.path().join("v2/config.toml");
+
+        Config::migrate_v1_to_v2_paths(&v2, Some(&v1)).unwrap();
+
+        assert!(!v2.exists(), "no v1 → must not create v2");
+    }
+
+    #[test]
+    fn migrate_is_noop_when_v1_path_is_none() {
+        let dir = tempdir().unwrap();
+        let v2 = dir.path().join("v2/config.toml");
+
+        Config::migrate_v1_to_v2_paths(&v2, None).unwrap();
+
+        assert!(!v2.exists());
+    }
+
+    /// True when the running machine has a real v1 config file at the
+    /// `ProjectDirs`-derived legacy path. The `migrate_v1_to_v2()` wrapper
+    /// would mutate that real v2 dir on this machine, which is unsafe to
+    /// do from a unit test. CI always passes this guard.
+    fn has_real_v1_config() -> bool {
+        Config::v1_legacy_path().is_some_and(|p| p.exists())
+    }
+
+    #[test]
+    fn v1_legacy_path_resolves_to_io_openlid_open_lid() {
+        let p = Config::v1_legacy_path().expect("ProjectDirs should resolve in a test env");
+        let s = p.to_string_lossy();
+        assert!(
+            s.contains("io.openlid.open-lid"),
+            "v1 legacy path must point at the v1 reverse-DNS dir, got {s}"
+        );
+        assert_eq!(p.file_name().and_then(|s| s.to_str()), Some("config.toml"));
+    }
+
+    #[test]
+    fn migrate_v1_to_v2_smoke_returns_default_path() {
+        // Skip on dev machines that have an actual v1 config file —
+        // calling the wrapper there would write to the developer's real v2
+        // config dir. CI runs in a clean env where this guard is a no-op.
+        if has_real_v1_config() {
+            eprintln!("skipping: real v1 config exists on this machine");
+            return;
+        }
+        let migrated = Config::migrate_v1_to_v2().expect("wrapper should succeed");
+        let v2 = Config::default_path().expect("default_path should succeed");
+        assert_eq!(migrated, v2, "wrapper must return the v2 path");
     }
 
     #[test]
@@ -311,7 +470,7 @@ mod tests {
         // developer/CI machine (where ProjectDirs::from returns Some),
         // and (2) the resolved file is named `config.toml`. If a future
         // refactor renamed the file (e.g., to `config.yaml`), CLI
-        // `open-lid config show` would silently look at the wrong path.
+        // `openlid config show` would silently look at the wrong path.
         let p = Config::default_path().expect("ProjectDirs should resolve in a test env");
         assert_eq!(p.file_name().and_then(|s| s.to_str()), Some("config.toml"));
     }

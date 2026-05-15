@@ -1,17 +1,17 @@
 [package]
-name = "open-lid-helper"
+name = "openlid-helper"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "open-lid-helper"
+name = "openlid-helper"
 path = "src/main.rs"
 
 [dependencies]
-open-lid-core = { workspace = true }
-open-lid-helper-protocol = { path = "../helper-protocol" }
+openlid-core = { workspace = true }
+openlid-helper-protocol = { path = "../helper-protocol" }
 objc2 = { workspace = true }
 objc2-foundation = { workspace = true }
 block2 = { workspace = true }

@@ -16,11 +16,11 @@ maintained in spare time, so I appreciate every issue, PR, and question.
 
 ```bash
 # Prerequisites: Rust 1.88+. To build/run the macOS backend you also need
-# macOS 13+ on Apple Silicon and Xcode CLT. `open-lid-core` (the pure-logic
+# macOS 13+ on Apple Silicon and Xcode CLT. `openlid-core` (the pure-logic
 # crate) compiles on Linux and Windows too — no platform-specific toolchain
 # needed for working on the state machine, config, or IPC schemas.
-git clone https://github.com/openlid/open-lid.git
-cd open-lid
+git clone https://github.com/openlid/openlid.git
+cd openlid
 cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
@@ -46,7 +46,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered design.
   non-trivial — it's easier to align on the approach before code review.
 - **Documentation improvements** — typos, clarifications, new examples,
   troubleshooting entries.
-- **Test coverage improvements** — especially the `open-lid` (app) crate,
+- **Test coverage improvements** — especially the `openlid` (app) crate,
   which is the hardest to cover due to AppKit / IOKit FFI.
 - **Performance improvements** with before/after measurements.
 - **Accessibility improvements** — VoiceOver labels, keyboard navigation.
@@ -68,7 +68,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered design.
 ### Likely to be declined
 
 - **Linux/Windows backend implementations before v1.0 ships.** The
-  `open-lid-core` platform traits exist, but they'll get refined as the
+  `openlid-core` platform traits exist, but they'll get refined as the
   macOS implementation matures toward v1.0. Backend contributions are
   very welcome *after* v1.0 — please open an issue first describing
   which OS, which APIs (logind/D-Bus, `SetThreadExecutionState`, etc.),
@@ -86,15 +86,15 @@ Three crates:
 
 | Crate | Role |
 |---|---|
-| `open-lid-core` | Pure logic: types, state machine, config schema, IPC types, platform traits. Zero macOS dependencies. Compiles on any target. |
-| `open-lid-helper` | Privileged launchd daemon. Owns the NSXPC listener and `pmset` calls. |
-| `open-lid` | Menu bar app + CLI dispatcher. Owns AppKit UI, IOKit sensors, NSXPC client to the helper, Unix-socket control server for the CLI. |
+| `openlid-core` | Pure logic: types, state machine, config schema, IPC types, platform traits. Zero macOS dependencies. Compiles on any target. |
+| `openlid-helper` | Privileged launchd daemon. Owns the NSXPC listener and `pmset` calls. |
+| `openlid` | Menu bar app + CLI dispatcher. Owns AppKit UI, IOKit sensors, NSXPC client to the helper, Unix-socket control server for the CLI. |
 
 A few more in support:
 
 | Crate | Role |
 |---|---|
-| `open-lid-helper-protocol` | Clang-emitted NSXPC protocol metadata. Shared between app and helper. |
+| `openlid-helper-protocol` | Clang-emitted NSXPC protocol metadata. Shared between app and helper. |
 | `xtask` | Build automation (release pipeline). |
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design rationale.
@@ -104,7 +104,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design rationale.
 - **Edition 2021**, MSRV **1.81**, stable Rust only.
 - **`cargo fmt`** enforced in CI.
 - **`cargo clippy --all-targets -- -D warnings`** must pass.
-- **Tests** for any new logic in `open-lid-core` or `open-lid-helper`.
+- **Tests** for any new logic in `openlid-core` or `openlid-helper`.
   AppKit / FFI code doesn't need automated tests; rely on manual smoke
   testing instead.
 - **Comments explain *why*, not *what*.** If your code needs a comment to
@@ -154,15 +154,15 @@ In your PR description:
 
 ## Reporting issues
 
-Open a [new issue](https://github.com/openlid/open-lid/issues/new/choose).
+Open a [new issue](https://github.com/openlid/openlid/issues/new/choose).
 There are templates for bugs and feature requests. The bug template asks
 for:
 
 - macOS version (`sw_vers -productVersion`)
 - Mac model / CPU architecture (`uname -m`)
-- Open-Lid version (`open-lid --version`)
+- Open-Lid version (`openlid --version`)
 - What you did, what you expected, what actually happened
-- Relevant lines from `~/Library/Logs/open-lid/app.log`
+- Relevant lines from `~/Library/Logs/openlid/app.log`
 
 ## Security issues
 

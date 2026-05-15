@@ -7,8 +7,8 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetMain};
 use core_foundation::string::CFString;
-use open_lid_core::mode::PowerSource;
-use open_lid_core::platform::{PowerSourceCallback, PowerSourceMonitor};
+use openlid_core::mode::PowerSource;
+use openlid_core::platform::{PowerSourceCallback, PowerSourceMonitor};
 use std::sync::{Arc, Mutex};
 
 pub struct MacPowerSourceMonitor {

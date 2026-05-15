@@ -22,7 +22,7 @@ if [ ! -d "$SRC" ]; then
 fi
 
 # Kill any currently-running instance so the binary swap is clean.
-pkill -f "/Applications/OpenLid.app/Contents/MacOS/open-lid" 2>/dev/null || true
+pkill -f "/Applications/OpenLid.app/Contents/MacOS/openlid" 2>/dev/null || true
 
 # Delete-first is essential. `cp -R` *over* an existing bundle reuses
 # parts of the old directory tree, which leaves macOS's icon cache

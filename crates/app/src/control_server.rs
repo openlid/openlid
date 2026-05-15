@@ -1,5 +1,5 @@
 //! Unix domain socket server. Accepts one request per connection, replies, closes.
-//! Path: ~/Library/Application Support/io.openlid.open-lid/control.sock.
+//! Path: ~/Library/Application Support/io.openlid.app/control.sock.
 //!
 //! Access control:
 //!   1. The socket lives inside `~/Library/Application Support` which is
@@ -21,16 +21,14 @@ use interprocess::local_socket::{
     traits::{ListenerExt, StreamCommon},
     GenericFilePath, ListenerOptions, Stream, ToFsName,
 };
-use open_lid_core::ipc::control::{ControlRequest, ControlResponse};
-use open_lid_core::platform::{
-    DisplayController, LidObserver, PowerController, PowerSourceMonitor,
-};
+use openlid_core::ipc::control::{ControlRequest, ControlResponse};
+use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 pub fn control_socket_path() -> Result<PathBuf> {
-    let dirs = directories::ProjectDirs::from("io", "openlid", "open-lid")
+    let dirs = directories::ProjectDirs::from("io", "openlid", "openlid")
         .ok_or_else(|| anyhow::anyhow!("no home"))?;
     let dir = dirs.config_dir();
     std::fs::create_dir_all(dir).ok();

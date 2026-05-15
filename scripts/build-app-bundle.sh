@@ -45,7 +45,7 @@ fi
 echo "Building profile=${PROFILE}, helper code-req=${OPEN_LID_HELPER_PROFILE}, signing=${SIGNING_IDENTITY}"
 
 OPEN_LID_HELPER_PROFILE="$OPEN_LID_HELPER_PROFILE" \
-    cargo build $CARGO_PROFILE_FLAG -p open-lid -p open-lid-helper
+    cargo build $CARGO_PROFILE_FLAG -p openlid -p openlid-helper
 
 BUNDLE_DIR="target/bundle"
 APP="${BUNDLE_DIR}/OpenLid.app"
@@ -59,8 +59,8 @@ mkdir -p "$APP/Contents/Library/LaunchDaemons"
 # tweaks their indexer settings.
 touch target/.metadata_never_index 2>/dev/null || true
 
-cp "target/${CARGO_TARGET_DIR_SUFFIX}/open-lid" "$APP/Contents/MacOS/open-lid"
-cp "target/${CARGO_TARGET_DIR_SUFFIX}/open-lid-helper" "$APP/Contents/MacOS/open-lid-helper"
+cp "target/${CARGO_TARGET_DIR_SUFFIX}/openlid" "$APP/Contents/MacOS/openlid"
+cp "target/${CARGO_TARGET_DIR_SUFFIX}/openlid-helper" "$APP/Contents/MacOS/openlid-helper"
 cp resources/app/Info.plist "$APP/Contents/Info.plist"
 cp resources/helper/io.openlid.helper.plist "$APP/Contents/Library/LaunchDaemons/io.openlid.helper.plist"
 
@@ -78,8 +78,8 @@ cp resources/app/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # entitlements (e.g., for Mac App Store distribution), the *.entitlements
 # files at resources/{app,helper}/ are the place to add them.
 # ─────────────────────────────────────────────────────────────────────────────
-codesign "${SIGN_OPTS[@]}" "$APP/Contents/MacOS/open-lid-helper"
-codesign "${SIGN_OPTS[@]}" "$APP/Contents/MacOS/open-lid"
+codesign "${SIGN_OPTS[@]}" "$APP/Contents/MacOS/openlid-helper"
+codesign "${SIGN_OPTS[@]}" "$APP/Contents/MacOS/openlid"
 codesign "${SIGN_OPTS[@]}" --deep "$APP"
 
 # Verify signing actually worked

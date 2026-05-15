@@ -1,6 +1,6 @@
 # Open-Lid — Manual Smoke Checklist
 
-CI covers unit + integration tests across `open-lid-core` and `open-lid-helper`.
+CI covers unit + integration tests across `openlid-core` and `openlid-helper`.
 The AppKit / IOKit / NSXPC / SMAppService surfaces aren't testable from CI, so
 each release is smoke-tested by hand against a real Apple Silicon MacBook
 before tagging. This file is that checklist.
@@ -8,9 +8,9 @@ before tagging. This file is that checklist.
 ## Prep
 
 - [ ] Fresh shell. Previous Open-Lid uninstalled:
-  - `pkill -f /Applications/OpenLid.app/Contents/MacOS/open-lid || true`
+  - `pkill -f /Applications/OpenLid.app/Contents/MacOS/openlid || true`
   - `./scripts/dev-uninstall-helper.sh`
-  - `rm -rf /Applications/OpenLid.app ~/Library/Application\ Support/io.openlid.open-lid`
+  - `rm -rf /Applications/OpenLid.app ~/Library/Application\ Support/io.openlid.app`
 - [ ] `./scripts/install.sh` builds and installs into `/Applications`.
 - [ ] `./scripts/dev-install-helper.sh` installs the helper (one sudo prompt).
   Local ad-hoc-signed builds bypass SMAppService; this path is dev-only.
@@ -25,13 +25,13 @@ before tagging. This file is that checklist.
 
 ## CLI parity
 
-- [ ] `open-lid status` reflects the menu bar state.
-- [ ] `open-lid off` deactivates; menu bar icon updates within ~500ms.
-- [ ] `open-lid on` reactivates using the default duration.
-- [ ] `open-lid for 1m` activates with timer; after ~1 minute, state returns
+- [ ] `openlid status` reflects the menu bar state.
+- [ ] `openlid off` deactivates; menu bar icon updates within ~500ms.
+- [ ] `openlid on` reactivates using the default duration.
+- [ ] `openlid for 1m` activates with timer; after ~1 minute, state returns
       to OFF *without* user action.
-- [ ] `open-lid until <future HH:MM>` activates with a wall-clock deadline.
-- [ ] `open-lid status --json` emits valid JSON matching the `Snapshot` shape.
+- [ ] `openlid until <future HH:MM>` activates with a wall-clock deadline.
+- [ ] `openlid status --json` emits valid JSON matching the `Snapshot` shape.
 
 ## Lid + display behavior
 

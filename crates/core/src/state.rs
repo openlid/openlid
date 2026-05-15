@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn default_app_state_is_off_with_open_lid_on_ac() {
+    fn default_app_state_is_off_with_openlid_on_ac() {
         // Default is the "fresh install" baseline. The runtime relies on
         // these specific defaults: a brand-new install must NOT start
         // preventing sleep, and the runtime-only fields must resolve to

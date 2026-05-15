@@ -9,7 +9,7 @@
     <key>CFBundleDisplayName</key>
     <string>Open-Lid</string>
     <key>CFBundleExecutable</key>
-    <string>open-lid</string>
+    <string>openlid</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
