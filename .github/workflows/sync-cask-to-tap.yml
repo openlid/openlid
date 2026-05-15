@@ -1,0 +1,111 @@
+name: sync-cask-to-tap
+
+# Mirrors dist/homebrew/open-lid.rb to openlid/homebrew-tap/Casks/open-lid.rb
+# whenever the in-repo template changes on main, plus manual dispatch.
+#
+# The tap repo is what `brew install --cask openlid/tap/open-lid` actually
+# reads; the in-repo template is the source-of-truth that should stay in
+# lockstep with the tap. Without this workflow they have drifted twice
+# already (SHA-256 rebump in tap commit cb3d350; binary stanza in 8f1bfc6).
+#
+# Setup (one-time):
+#   1. Create a fine-grained PAT at
+#      https://github.com/settings/personal-access-tokens
+#        - Repository access: openlid/homebrew-tap only
+#        - Permissions: Contents — Read and write
+#   2. Add as repo secret named TAP_PUSH_TOKEN at
+#      https://github.com/openlid/open-lid/settings/secrets/actions
+#
+# Until TAP_PUSH_TOKEN is configured, the workflow succeeds on no-op runs
+# (template already matches tap) and fails loudly with setup instructions
+# on runs that would actually need to push.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dist/homebrew/open-lid.rb'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-cask-to-tap
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SRC: dist/homebrew/open-lid.rb
+      DST_REPO: openlid/homebrew-tap
+      DST_PATH: Casks/open-lid.rb
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: validate cask Ruby syntax
+        run: ruby -c "$SRC"
+
+      - name: detect drift vs tap
+        id: drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          tap_meta=$(gh api "repos/${DST_REPO}/contents/${DST_PATH}")
+          tap_sha=$(echo "$tap_meta" | jq -r '.sha')
+          echo "tap_sha=${tap_sha}" >> "$GITHUB_OUTPUT"
+
+          tap_decoded=$(mktemp)
+          echo "$tap_meta" | jq -r '.content' | base64 -d > "$tap_decoded"
+
+          if cmp -s "$SRC" "$tap_decoded"; then
+            echo "drifted=false" >> "$GITHUB_OUTPUT"
+            echo "Tap cask matches dist template — no sync needed."
+          else
+            echo "drifted=true" >> "$GITHUB_OUTPUT"
+            echo "Tap cask differs from dist template:"
+            diff -u "$tap_decoded" "$SRC" || true
+          fi
+
+      - name: sync to openlid/homebrew-tap
+        if: steps.drift.outputs.drifted == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+          TAP_FILE_SHA: ${{ steps.drift.outputs.tap_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::Cask drift detected but TAP_PUSH_TOKEN is not configured."
+            echo ""
+            echo "${SRC} differs from"
+            echo "${DST_REPO}/${DST_PATH} and needs to be synced,"
+            echo "but this workflow has no token with write access to the tap."
+            echo ""
+            echo "To enable auto-sync:"
+            echo "  1. Create a fine-grained PAT at"
+            echo "     https://github.com/settings/personal-access-tokens"
+            echo "       - Repository access: openlid/homebrew-tap only"
+            echo "       - Permissions: Contents — Read and write"
+            echo "  2. Add as repo secret TAP_PUSH_TOKEN at"
+            echo "     https://github.com/openlid/open-lid/settings/secrets/actions"
+            echo ""
+            echo "Until then, sync the tap manually by copying"
+            echo "${SRC} into ${DST_REPO}/${DST_PATH}."
+            exit 1
+          fi
+
+          content_b64=$(base64 -w0 "$SRC")
+          short_sha=${GITHUB_SHA:0:7}
+
+          gh api -X PUT "repos/${DST_REPO}/contents/${DST_PATH}" \
+            -f message="cask: sync from open-lid@${short_sha}" \
+            -f content="${content_b64}" \
+            -f sha="${TAP_FILE_SHA}" \
+            -f branch=main \
+            >/dev/null
+
+          echo "Cask synced to ${DST_REPO}@main from open-lid@${short_sha}"
