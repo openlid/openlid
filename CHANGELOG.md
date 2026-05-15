@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Homebrew cask now puts `open-lid` on `$PATH`.** Added a `binary` stanza
+  that symlinks `/Applications/OpenLid.app/Contents/MacOS/open-lid` into
+  `$HOMEBREW_PREFIX/bin/`, so `brew install --cask openlid/tap/open-lid`
+  alone is enough to use the CLI from the terminal — no separate
+  `install-cli-symlink.sh` step. The symlink is brew-managed and removed
+  automatically on `brew uninstall --cask open-lid`. The from-source flow
+  is unchanged.
+
 ## [1.0.0] - 2026-05-14
 
 The "stable API" release. The CLI, `config.toml` schema, and IPC wire shapes
