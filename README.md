@@ -105,6 +105,9 @@ After installing, launch Open-Lid; macOS will prompt you to enable it in
 **System Settings → General → Login Items → Allow in the Background**.
 Flip the Open-Lid toggle on — no admin password required.
 
+The brew install also puts `open-lid` on your `PATH`, so you can drive
+everything from the terminal — see [CLI](#cli) below.
+
 ### From source — macOS
 
 Prerequisites: macOS 13+ on Apple Silicon, Rust 1.88+, Xcode Command Line

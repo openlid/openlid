@@ -17,10 +17,11 @@ cask "open-lid" do
   depends_on arch: :arm64
 
   app "OpenLid.app"
+  binary "#{appdir}/OpenLid.app/Contents/MacOS/open-lid"
 
   postflight do
     ohai "Open-Lid installed."
-    ohai "Launch it from /Applications or with `open -a OpenLid`."
+    ohai "Launch from /Applications, `open -a OpenLid`, or run `open-lid` in your terminal."
     ohai "On first launch, macOS will ask you to approve the helper in:"
     ohai "  System Settings → General → Login Items → Allow in the Background"
     ohai "Flip the Open-Lid toggle on — no admin password required."
