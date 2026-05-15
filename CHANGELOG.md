@@ -11,9 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 The rebrand release. The hyphenated `open-lid` name has been retired
 everywhere the user can see it — terminal command, cask, Cargo crates,
-configuration directory. The GitHub repo URL and the macOS bundle IDs
-(`io.openlid.app`, `io.openlid.helper`) are unchanged. v1.x users get
-their config auto-migrated on first launch of v2.0.
+configuration directory, **and the GitHub repo itself**
+(`openlid/open-lid` → `openlid/openlid`; old URL redirects). The macOS
+bundle IDs (`io.openlid.app`, `io.openlid.helper`) are unchanged.
+v1.x users get their config auto-migrated on first launch of v2.0.
 
 ### Changed (breaking)
 
@@ -51,10 +52,15 @@ their config auto-migrated on first launch of v2.0.
 ### Added
 
 - **New app icon.** Flat teal (`#2688a8`) squircle with a white Tabler
-  laptop glyph. Background corners are transparent so the icon composites
-  cleanly against any wallpaper. Regeneratable from
-  [scripts/generate-icon.sh](scripts/generate-icon.sh) — same toolchain
-  as before (`qlmanage` + `sips` + `iconutil`, no Homebrew dependencies).
+  laptop glyph. The four corners outside the squircle are genuinely
+  transparent (alpha = 0), so the icon composites cleanly against any
+  wallpaper, Dock theme, or README background. Regeneratable from
+  [scripts/generate-icon.sh](scripts/generate-icon.sh); the script now
+  renders the SVG via a Swift one-liner (`NSImage` + `NSBitmapImageRep`
+  with `hasAlpha: true`) instead of `qlmanage -t`, because `qlmanage`
+  bakes in an opaque white background regardless of the SVG's alpha.
+  Still no Homebrew dependencies — Swift ships with Xcode CLT, which
+  the project already requires.
 - **Auto-migration of v1 config on first launch.** On startup, v2 checks
   whether `~/Library/Application Support/io.openlid.app/config.toml`
   exists; if not but `io.openlid.open-lid/config.toml` does, v2 reads
@@ -246,8 +252,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/open-lid/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/openlid/open-lid/releases/tag/v2.0.0
-[1.0.0]: https://github.com/openlid/open-lid/releases/tag/v1.0.0
-[0.2.0]: https://github.com/openlid/open-lid/releases/tag/v0.2.0
-[0.1.0]: https://github.com/openlid/open-lid/releases/tag/v0.1.0
+[Unreleased]: https://github.com/openlid/openlid/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/openlid/openlid/releases/tag/v2.0.0
+[1.0.0]: https://github.com/openlid/openlid/releases/tag/v1.0.0
+[0.2.0]: https://github.com/openlid/openlid/releases/tag/v0.2.0
+[0.1.0]: https://github.com/openlid/openlid/releases/tag/v0.1.0

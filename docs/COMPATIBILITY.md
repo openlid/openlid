@@ -153,5 +153,5 @@ change in any release:
 
 If a v2.x release breaks a surface listed under "Stable surfaces", that
 is a bug. File an issue at
-<https://github.com/openlid/open-lid/issues> with the failing
+<https://github.com/openlid/openlid/issues> with the failing
 command/config and the version of Open-Lid you saw it on.

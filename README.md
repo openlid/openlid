@@ -6,12 +6,12 @@
 
 **Keep your laptop awake — even with the lid closed.**
 
-[![CI](https://github.com/openlid/open-lid/actions/workflows/ci.yml/badge.svg)](https://github.com/openlid/open-lid/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/openlid/open-lid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/open-lid)
+[![CI](https://github.com/openlid/openlid/actions/workflows/ci.yml/badge.svg)](https://github.com/openlid/openlid/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/openlid/openlid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/openlid)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![GitHub release](https://img.shields.io/github/v/release/openlid/open-lid)](https://github.com/openlid/open-lid/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/openlid/open-lid/total)](https://github.com/openlid/open-lid/releases)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/open-lid)
+[![GitHub release](https://img.shields.io/github/v/release/openlid/openlid)](https://github.com/openlid/openlid/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/openlid/openlid/total)](https://github.com/openlid/openlid/releases)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/openlid)
 
 </div>
 
@@ -88,7 +88,7 @@ battery gets low.
 > [!IMPORTANT]
 > Installation today is macOS-only. Linux installation instructions
 > will land here once the Linux backend ships in v1.x. If you'd find
-> Open-Lid useful on Linux, please [open an issue](https://github.com/openlid/open-lid/issues/new/choose)
+> Open-Lid useful on Linux, please [open an issue](https://github.com/openlid/openlid/issues/new/choose)
 > describing your distro and use case — it helps prioritize.
 
 ### Download the signed DMG (recommended) — macOS
@@ -98,7 +98,7 @@ battery gets low.
 brew install --cask openlid/tap/openlid
 
 # Or download the DMG directly:
-# https://github.com/openlid/open-lid/releases/latest
+# https://github.com/openlid/openlid/releases/latest
 ```
 
 After installing, launch Open-Lid; macOS will prompt you to enable it in
@@ -114,7 +114,7 @@ Prerequisites: macOS 13+ on Apple Silicon, Rust 1.88+, Xcode Command Line
 Tools.
 
 ```bash
-git clone https://github.com/openlid/open-lid.git openlid
+git clone https://github.com/openlid/openlid.git
 cd openlid
 
 # Build (ad-hoc-signed, dev profile), install into /Applications, refresh caches:
@@ -294,7 +294,7 @@ prevented; only the display-idle assertion is dropped.
   (`SetThreadExecutionState` + `WM_POWERBROADCAST`) ships if there's
   user demand. The `openlid-core` platform traits are already
   cross-platform-shaped, so this is a backend addition, not a rewrite.
-  [Open an issue](https://github.com/openlid/open-lid/issues/new/choose)
+  [Open an issue](https://github.com/openlid/openlid/issues/new/choose)
   to register interest.
 
 ## Contributing

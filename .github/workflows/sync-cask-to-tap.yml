@@ -14,7 +14,7 @@ name: sync-cask-to-tap
 #        - Repository access: openlid/homebrew-tap only
 #        - Permissions: Contents — Read and write
 #   2. Add as repo secret named TAP_PUSH_TOKEN at
-#      https://github.com/openlid/open-lid/settings/secrets/actions
+#      https://github.com/openlid/openlid/settings/secrets/actions
 #
 # Until TAP_PUSH_TOKEN is configured, the workflow succeeds on no-op runs
 # (template already matches tap) and fails loudly with setup instructions
@@ -99,7 +99,7 @@ jobs:
             echo "       - Repository access: openlid/homebrew-tap only"
             echo "       - Permissions: Contents — Read and write"
             echo "  2. Add as repo secret TAP_PUSH_TOKEN at"
-            echo "     https://github.com/openlid/open-lid/settings/secrets/actions"
+            echo "     https://github.com/openlid/openlid/settings/secrets/actions"
             echo ""
             echo "Until then, sync the tap manually by copying"
             echo "${SRC} into ${DST_REPO}/${DST_PATH}."

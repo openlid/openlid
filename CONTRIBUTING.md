@@ -19,7 +19,7 @@ maintained in spare time, so I appreciate every issue, PR, and question.
 # macOS 13+ on Apple Silicon and Xcode CLT. `openlid-core` (the pure-logic
 # crate) compiles on Linux and Windows too — no platform-specific toolchain
 # needed for working on the state machine, config, or IPC schemas.
-git clone https://github.com/openlid/open-lid.git openlid
+git clone https://github.com/openlid/openlid.git
 cd openlid
 cargo build --workspace
 cargo test --workspace
@@ -154,7 +154,7 @@ In your PR description:
 
 ## Reporting issues
 
-Open a [new issue](https://github.com/openlid/open-lid/issues/new/choose).
+Open a [new issue](https://github.com/openlid/openlid/issues/new/choose).
 There are templates for bugs and feature requests. The bug template asks
 for:
 

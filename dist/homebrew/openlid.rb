@@ -4,11 +4,11 @@ cask "openlid" do
   # notarized. The release workflow + sync-cask-to-tap PR completes this.
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
-  url "https://github.com/openlid/open-lid/releases/download/v#{version}/OpenLid-v#{version}.dmg",
-      verified: "github.com/openlid/open-lid/"
+  url "https://github.com/openlid/openlid/releases/download/v#{version}/OpenLid-v#{version}.dmg",
+      verified: "github.com/openlid/openlid/"
   name "Open-Lid"
   desc "Keep your Mac awake — even with the lid closed"
-  homepage "https://github.com/openlid/open-lid"
+  homepage "https://github.com/openlid/openlid"
 
   livecheck do
     url :url
