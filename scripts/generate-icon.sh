@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 # scripts/generate-icon.sh
 #
-# Generate `resources/app/AppIcon.icns` from a source SVG. Designed to use
-# only built-in macOS tooling — no Homebrew dependencies. Re-run this whenever
-# you change the icon design (the .icns is committed so other builds skip the
-# generation step).
+# Generate `resources/app/AppIcon.icns` (and the README + org-avatar PNGs)
+# from a source SVG. Designed to use only built-in macOS tooling — no
+# Homebrew dependencies. Re-run this whenever you change the icon design
+# (outputs are committed so other builds skip the generation step).
 #
 # Pipeline:
 #   1. Write a 1024×1024 source SVG to a temp file.
-#   2. Render with `qlmanage -t` (macOS QuickLook).
+#   2. Render with a Swift one-liner (NSImage + NSBitmapImageRep).
+#      We deliberately do NOT use `qlmanage -t` here — qlmanage always
+#      fills its canvas with an opaque white background, regardless of
+#      the SVG's transparency. NSImage + NSBitmapImageRep with
+#      `hasAlpha: true` preserves the SVG's alpha channel, so the
+#      corners outside the rx/ry squircle stay transparent. Swift ships
+#      with Xcode CLT, which the project already requires.
 #   3. Downscale to each iconset size with `sips`.
 #   4. Pack with `iconutil --convert icns`.
+#   5. Emit the README header PNG (256×256) and GitHub org avatar PNG
+#      (1024×1024) from the same source render so all icon surfaces
+#      stay in lockstep across the .icns, README, and org-avatar.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -52,14 +61,57 @@ cat > "$SVG_PATH" <<'EOF'
 EOF
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. Render SVG → 1024×1024 PNG using QuickLook.
+# 2. Render SVG → 1024×1024 PNG via Swift + NSImage + NSBitmapImageRep.
+#    Preserves the SVG's alpha channel — corners outside the squircle's
+#    rx/ry stay transparent. See file header for why this isn't qlmanage.
 # ─────────────────────────────────────────────────────────────────────────────
-qlmanage -t -s 1024 -o "$TMP_DIR" "$SVG_PATH" > /dev/null 2>&1
-mv "${SVG_PATH}.png" "$PNG_1024"
+SWIFT_RENDERER="${TMP_DIR}/render.swift"
+cat > "$SWIFT_RENDERER" <<'SWIFT'
+import Cocoa
+
+guard CommandLine.arguments.count == 4,
+      let size = Int(CommandLine.arguments[3]) else {
+    FileHandle.standardError.write("usage: render <svg> <png> <size>\n".data(using: .utf8)!)
+    exit(2)
+}
+let svgURL = URL(fileURLWithPath: CommandLine.arguments[1])
+let pngURL = URL(fileURLWithPath: CommandLine.arguments[2])
+
+guard let image = NSImage(contentsOf: svgURL) else {
+    FileHandle.standardError.write("error: NSImage failed to load \(svgURL.path)\n".data(using: .utf8)!)
+    exit(1)
+}
+image.size = NSSize(width: size, height: size)
+
+guard let bitmap = NSBitmapImageRep(
+    bitmapDataPlanes: nil,
+    pixelsWide: size, pixelsHigh: size,
+    bitsPerSample: 8, samplesPerPixel: 4,
+    hasAlpha: true, isPlanar: false,
+    colorSpaceName: .deviceRGB,
+    bytesPerRow: 0, bitsPerPixel: 0
+) else {
+    FileHandle.standardError.write("error: NSBitmapImageRep alloc failed\n".data(using: .utf8)!)
+    exit(1)
+}
+
+NSGraphicsContext.saveGraphicsState()
+NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+image.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
+NSGraphicsContext.restoreGraphicsState()
+
+guard let data = bitmap.representation(using: .png, properties: [:]) else {
+    FileHandle.standardError.write("error: png encode failed\n".data(using: .utf8)!)
+    exit(1)
+}
+try data.write(to: pngURL)
+SWIFT
+
+swift "$SWIFT_RENDERER" "$SVG_PATH" "$PNG_1024" 1024
 
 # Sanity check: file should be a real PNG of the right size.
 if [ ! -f "$PNG_1024" ]; then
-    echo "qlmanage failed to produce a PNG" >&2
+    echo "swift renderer failed to produce a PNG" >&2
     exit 1
 fi
 
