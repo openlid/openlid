@@ -25,8 +25,13 @@ fn send_request(req: ControlRequest, auto_launch: bool) -> Result<ControlRespons
             Err(e) => {
                 last_err = Some(e);
                 if auto_launch && attempts == 6 {
+                    // Look up by bundle identifier (-b), not display name (-a).
+                    // -a does a LaunchServices name match that could resolve
+                    // to a different user-installed bundle named "OpenLid";
+                    // -b matches CFBundleIdentifier which the user can't
+                    // collide with for an unsigned/differently-signed app.
                     let _ = std::process::Command::new("/usr/bin/open")
-                        .args(["-a", "OpenLid"])
+                        .args(["-b", "io.openlid.app"])
                         .status();
                 }
                 std::thread::sleep(StdDuration::from_millis(500));

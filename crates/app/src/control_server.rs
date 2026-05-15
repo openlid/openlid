@@ -1,10 +1,25 @@
 //! Unix domain socket server. Accepts one request per connection, replies, closes.
 //! Path: ~/Library/Application Support/io.openlid.open-lid/control.sock.
+//!
+//! Access control:
+//!   1. The socket lives inside `~/Library/Application Support` which is
+//!      `0700` for the owning user, so cross-UID traversal is blocked at the
+//!      filesystem layer (this is the primary defense).
+//!   2. Every accepted connection has its peer's effective UID checked
+//!      against ours via `SO_PEERCRED`/`xucred` (defense-in-depth, race-free).
+//!
+//! We deliberately do NOT set an explicit socket file mode via
+//! `ListenerOptionsExt::mode`: on macOS that path calls `fchmod` on the
+//! unbound socket fd, which returns `EINVAL` and is mapped to
+//! `io::ErrorKind::Unsupported` by `interprocess`, breaking listener
+//! creation. The peer-creds check above is the authoritative defense and
+//! makes the mode bits redundant.
 
 use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
 use interprocess::local_socket::{
-    traits::ListenerExt, GenericFilePath, ListenerOptions, Stream, ToFsName,
+    traits::{ListenerExt, StreamCommon},
+    GenericFilePath, ListenerOptions, Stream, ToFsName,
 };
 use open_lid_core::ipc::control::{ControlRequest, ControlResponse};
 use open_lid_core::platform::{
@@ -61,6 +76,26 @@ where
     S: PowerSourceMonitor + Send + Sync + 'static,
     D: DisplayController + Send + Sync + 'static,
 {
+    // SAFETY: getpeereid via interprocess's xucred wrapper — the kernel
+    // attaches the peer's effective UID at connect time, so this is
+    // race-free regardless of PID reuse. We reject the connection if the
+    // peer is a different user, or if we can't determine its UID. Returning
+    // Ok(()) drops the stream without writing — the peer just sees EOF.
+    let our_euid = unsafe { libc::geteuid() };
+    match stream.peer_creds().ok().and_then(|c| c.euid()) {
+        Some(peer_euid) if peer_euid == our_euid => {}
+        Some(peer_euid) => {
+            tracing::warn!(
+                "rejecting control connection: peer euid {peer_euid} != ours {our_euid}",
+            );
+            return Ok(());
+        }
+        None => {
+            tracing::warn!("rejecting control connection: could not read peer euid");
+            return Ok(());
+        }
+    }
+
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     let n = reader.read_line(&mut line)?;
