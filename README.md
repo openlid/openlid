@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="resources/app/AppIcon-readme.png" alt="Open-Lid" width="128" height="128" />
+<img src="resources/app/AppIcon-readme.png?v=2" alt="Open-Lid" width="128" height="128" />
 
 # Open-Lid
 
