@@ -17,6 +17,8 @@ cd "$(dirname "$0")/.."
 
 OUT_DIR="resources/app"
 OUT_ICNS="${OUT_DIR}/AppIcon.icns"
+OUT_README_PNG="${OUT_DIR}/AppIcon-readme.png"     # 256×256, used in README header
+OUT_AVATAR_PNG="resources/branding/openlid-org-avatar.png"  # 1024×1024, GitHub org avatar
 TMP_DIR="$(mktemp -d)"
 trap "rm -rf '$TMP_DIR'" EXIT
 
@@ -90,3 +92,18 @@ mkdir -p "$OUT_DIR"
 iconutil --convert icns "$ICONSET" --output "$OUT_ICNS"
 
 echo "Wrote $OUT_ICNS ($(stat -f%z "$OUT_ICNS") bytes)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Marketing / docs PNGs from the same source SVG.
+#
+# We re-render these from `$PNG_1024` (not the iconset) because the iconset
+# entries get rounded by sips's high-quality downscaler, but we want the
+# README and org avatar to come straight off the 1024×1024 render to keep
+# the squircle edges crisp.
+# ─────────────────────────────────────────────────────────────────────────────
+mkdir -p "$(dirname "$OUT_AVATAR_PNG")"
+cp "$PNG_1024" "$OUT_AVATAR_PNG"
+echo "Wrote $OUT_AVATAR_PNG ($(stat -f%z "$OUT_AVATAR_PNG") bytes)"
+
+sips -z 256 256 "$PNG_1024" --out "$OUT_README_PNG" > /dev/null
+echo "Wrote $OUT_README_PNG ($(stat -f%z "$OUT_README_PNG") bytes)"
