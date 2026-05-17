@@ -2,7 +2,7 @@
 
 <img src="resources/app/AppIcon-readme.png?v=2" alt="Open-Lid" width="128" height="128" />
 
-# Open-Lid
+# OpenLid
 
 **Keep your laptop awake — even with the lid closed.**
 
