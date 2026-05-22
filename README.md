@@ -217,11 +217,41 @@ min_battery = 20
 # days = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 ```
 
+## Updating
+
+Open-Lid keeps every preference outside the `.app` bundle, so any of the
+update paths below preserves your toggle state, schedule, and all other
+settings.
+
+**Homebrew users** (recommended):
+
+```bash
+brew upgrade openlid
+```
+
+**Manual installs** — from the terminal:
+
+```bash
+openlid update           # checks GitHub, prompts, downloads, swaps, relaunches
+openlid update --check   # just check; exits 0 if up to date, 1 if available
+openlid update --yes     # non-interactive
+openlid update --json    # machine-readable status
+```
+
+**Manual installs** — from the menu bar:
+
+Click the menu bar icon → **Check for updates…**. A dialog reports the
+result and offers an Install button when a newer release is available.
+
+Nothing contacts the network unless you trigger one of these paths.
+
 ## Privacy
 
 Open-Lid does not collect, transmit, or store any user data. No telemetry.
-No analytics. No automatic update checks. All state stays on your machine
-in `~/Library/Application Support/io.openlid.app/`.
+No analytics. No automatic update checks — Open-Lid only contacts GitHub
+when you run `openlid update` or click "Check for updates…" in the menu.
+All state stays on your machine in
+`~/Library/Application Support/io.openlid.app/`.
 
 The privileged helper writes a small marker file at
 `/Library/Application Support/openlid/sleep-prevention.enabled` while sleep
