@@ -18,6 +18,7 @@
 //! (red button or our "Close" button) just hides it; the next `show()` brings
 //! it back. Subsequent shows refresh the controls from the latest snapshot.
 
+use chrono::NaiveTime;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
@@ -29,6 +30,7 @@ use objc2_foundation::{
     ns_string, MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 use openlid_core::ipc::control::Snapshot;
+use openlid_core::mode::{DaysOfWeek, Schedule};
 use std::cell::OnceCell;
 use std::sync::Arc;
 
@@ -40,6 +42,11 @@ pub trait PrefsActions: Send + Sync {
     fn set_default_duration(&self, minutes: Option<u32>);
     fn set_battery_threshold(&self, pct: Option<u8>);
     fn set_prevent_display_sleep(&self, enabled: bool);
+    /// Apply a schedule update. `None` clears any existing schedule;
+    /// `Some(s)` sets it. Implementations should also turn the toggle on
+    /// when transitioning from no-schedule to schedule, so the new gate
+    /// has an enabled state to constrain.
+    fn set_schedule(&self, schedule: Option<Schedule>);
 }
 
 /// Default battery-threshold value shown in the disabled numeric field when
@@ -76,6 +83,11 @@ struct PrefsControls {
     duration_popup: Retained<NSPopUpButton>,
     battery_checkbox: Retained<NSButton>,
     battery_field: Retained<NSTextField>,
+    schedule_master: Retained<NSButton>,
+    schedule_from: Retained<NSTextField>,
+    schedule_to: Retained<NSTextField>,
+    /// Day-of-week checkboxes in Mon..Sun order.
+    schedule_days: [Retained<NSButton>; 7],
 }
 
 // SAFETY: see PrefsControls doc.
@@ -182,6 +194,44 @@ define_class!(
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(setScheduleMaster:))]
+        fn set_schedule_master(&self, _sender: Option<&AnyObject>) {
+            let Some(controls) = self.ivars().controls.get() else {
+                return;
+            };
+            let master_on = controls.schedule_master.state() == NSControlStateValueOn;
+            schedule_set_subcontrols_enabled(controls, master_on);
+
+            let new = if master_on {
+                Some(build_schedule_from_controls(controls))
+            } else {
+                None
+            };
+            if let Some(actions) = self.ivars().actions.get() {
+                actions.set_schedule(new);
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(setScheduleField:))]
+        fn set_schedule_field(&self, _sender: Option<&AnyObject>) {
+            // Any of from/to/day controls changed. If the master is off, we
+            // don't send updates — those controls are visually disabled and
+            // any stray AppKit event we get for them is meaningless.
+            let Some(controls) = self.ivars().controls.get() else {
+                return;
+            };
+            let master_on = controls.schedule_master.state() == NSControlStateValueOn;
+            if !master_on {
+                return;
+            }
+            let s = build_schedule_from_controls(controls);
+            if let Some(actions) = self.ivars().actions.get() {
+                actions.set_schedule(Some(s));
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(closeWindow:))]
         fn close_window(&self, _sender: Option<&AnyObject>) {
             if let Some(window) = self.ivars().window.get() {
@@ -190,6 +240,63 @@ define_class!(
         }
     }
 );
+
+/// Default window when the master is flipped on with no prior schedule.
+const DEFAULT_SCHEDULE_START: (u32, u32) = (9, 0);
+const DEFAULT_SCHEDULE_END: (u32, u32) = (17, 0);
+
+/// Read the schedule sub-controls and synthesize a `Schedule`. Falls back to
+/// 09:00-17:00 / all days when any control is unparseable or no day is
+/// checked, so a freshly-ticked master checkbox always yields a sensible
+/// schedule rather than something that gates to never-active.
+fn build_schedule_from_controls(controls: &PrefsControls) -> Schedule {
+    let start = parse_hhmm_field(&controls.schedule_from).unwrap_or_else(|| {
+        NaiveTime::from_hms_opt(DEFAULT_SCHEDULE_START.0, DEFAULT_SCHEDULE_START.1, 0).unwrap()
+    });
+    let end = parse_hhmm_field(&controls.schedule_to).unwrap_or_else(|| {
+        NaiveTime::from_hms_opt(DEFAULT_SCHEDULE_END.0, DEFAULT_SCHEDULE_END.1, 0).unwrap()
+    });
+    // Equal start/end is a zero-length window — guard the same way the CLI
+    // does. Bump end by one minute so the schedule is at least nominally
+    // active. The user can correct it after seeing the value in the field.
+    let end = if start == end {
+        end.overflowing_add_signed(chrono::TimeDelta::minutes(1)).0
+    } else {
+        end
+    };
+    const DAY_FLAGS: [DaysOfWeek; 7] = [
+        DaysOfWeek::MON,
+        DaysOfWeek::TUE,
+        DaysOfWeek::WED,
+        DaysOfWeek::THU,
+        DaysOfWeek::FRI,
+        DaysOfWeek::SAT,
+        DaysOfWeek::SUN,
+    ];
+    let mut days = DaysOfWeek::empty();
+    for (i, btn) in controls.schedule_days.iter().enumerate() {
+        if btn.state() == NSControlStateValueOn {
+            days |= DAY_FLAGS[i];
+        }
+    }
+    if days.is_empty() {
+        days = DaysOfWeek::all();
+    }
+    Schedule { days, start, end }
+}
+
+fn parse_hhmm_field(field: &NSTextField) -> Option<NaiveTime> {
+    let nsstr = field.stringValue();
+    NaiveTime::parse_from_str(nsstr.to_string().trim(), "%H:%M").ok()
+}
+
+fn schedule_set_subcontrols_enabled(controls: &PrefsControls, on: bool) {
+    controls.schedule_from.setEnabled(on);
+    controls.schedule_to.setEnabled(on);
+    for btn in &controls.schedule_days {
+        btn.setEnabled(on);
+    }
+}
 
 /// Read an NSButton (checkbox)'s state as a plain bool. `sender` is the
 /// checkbox itself; reading `state` is a normal Obj-C message.
@@ -243,7 +350,11 @@ impl PreferencesWindow {
     pub fn new(mtm: MainThreadMarker, actions: Arc<dyn PrefsActions>) -> Self {
         // Frame is in screen coordinates at construction time; `center()`
         // is called on each show so the origin here is irrelevant.
-        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 360.0));
+        //
+        // Height grew from 360 to 480 to fit the schedule section below the
+        // battery row. AppKit y is bottom-up, so adding 120 pixels means the
+        // existing controls move UP by 120 from their previous y-coordinates.
+        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 480.0));
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable;
@@ -270,13 +381,16 @@ impl PreferencesWindow {
         // Build controls. Coordinates are in the content view's coordinate
         // system (origin = bottom-left, y grows upward).
         //
-        // Layout sketch (480 wide, 360 tall content):
-        //   y=270: header text (multi-line, 70 tall)
-        //   y=240: "Start Open-Lid at login"
-        //   y=210: "Activate Open-Lid at launch"
-        //   y=180: "Keep display awake while preventing sleep"
-        //   y=130: "Default duration:"  [popup]
-        //   y= 90: "Turn off when battery is below" [field] %
+        // Layout sketch (480 wide, 480 tall content):
+        //   y=390: header text (multi-line, 70 tall)
+        //   y=360: "Start Open-Lid at login"
+        //   y=330: "Activate Open-Lid at launch"
+        //   y=300: "Keep display awake while preventing sleep"
+        //   y=250: "Default duration:"  [popup]
+        //   y=210: "Turn off when battery is below" [field] %
+        //   y=160: "Active only during scheduled hours" (master checkbox)
+        //   y=125: "From" [HH:MM] "To" [HH:MM]
+        //   y= 90: [Mo][Tu][We][Th][Fr][Sa][Su]
         //   y= 16: [Close] (right-aligned)
         let content_view = window
             .contentView()
@@ -288,7 +402,7 @@ impl PreferencesWindow {
         );
         let header = NSTextField::wrappingLabelWithString(header_text, mtm);
         header.setFrame(NSRect::new(
-            NSPoint::new(20.0, 270.0),
+            NSPoint::new(20.0, 390.0),
             NSSize::new(440.0, 70.0),
         ));
         content_view.addSubview(&header);
@@ -305,7 +419,7 @@ impl PreferencesWindow {
             )
         };
         start_at_login.setFrame(NSRect::new(
-            NSPoint::new(20.0, 240.0),
+            NSPoint::new(20.0, 360.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&start_at_login);
@@ -320,7 +434,7 @@ impl PreferencesWindow {
             )
         };
         activate_at_launch.setFrame(NSRect::new(
-            NSPoint::new(20.0, 210.0),
+            NSPoint::new(20.0, 330.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&activate_at_launch);
@@ -337,7 +451,7 @@ impl PreferencesWindow {
             )
         };
         prevent_display_sleep.setFrame(NSRect::new(
-            NSPoint::new(20.0, 180.0),
+            NSPoint::new(20.0, 300.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&prevent_display_sleep);
@@ -345,12 +459,12 @@ impl PreferencesWindow {
         // Label + popup: Default duration.
         let duration_label = NSTextField::labelWithString(ns_string!("Default duration:"), mtm);
         duration_label.setFrame(NSRect::new(
-            NSPoint::new(20.0, 134.0),
+            NSPoint::new(20.0, 254.0),
             NSSize::new(130.0, 20.0),
         ));
         content_view.addSubview(&duration_label);
 
-        let popup_frame = NSRect::new(NSPoint::new(150.0, 130.0), NSSize::new(180.0, 26.0));
+        let popup_frame = NSRect::new(NSPoint::new(150.0, 250.0), NSSize::new(180.0, 26.0));
         let duration_popup =
             NSPopUpButton::initWithFrame_pullsDown(NSPopUpButton::alloc(mtm), popup_frame, false);
         for (label, minutes) in DURATION_ENTRIES {
@@ -376,12 +490,12 @@ impl PreferencesWindow {
             )
         };
         battery_checkbox.setFrame(NSRect::new(
-            NSPoint::new(20.0, 90.0),
+            NSPoint::new(20.0, 210.0),
             NSSize::new(260.0, 20.0),
         ));
         content_view.addSubview(&battery_checkbox);
 
-        let battery_field_frame = NSRect::new(NSPoint::new(290.0, 86.0), NSSize::new(50.0, 24.0));
+        let battery_field_frame = NSRect::new(NSPoint::new(290.0, 206.0), NSSize::new(50.0, 24.0));
         let battery_field =
             NSTextField::initWithFrame(NSTextField::alloc(mtm), battery_field_frame);
         battery_field.setBezeled(true);
@@ -396,10 +510,90 @@ impl PreferencesWindow {
 
         let percent_label = NSTextField::labelWithString(ns_string!("%"), mtm);
         percent_label.setFrame(NSRect::new(
-            NSPoint::new(346.0, 90.0),
+            NSPoint::new(346.0, 210.0),
             NSSize::new(20.0, 20.0),
         ));
         content_view.addSubview(&percent_label);
+
+        // Schedule section. The master checkbox toggles whether a schedule
+        // is active; the sub-controls below are visually disabled when off.
+        let schedule_master = unsafe {
+            NSButton::checkboxWithTitle_target_action(
+                ns_string!("Active only during scheduled hours"),
+                Some(handler_obj),
+                Some(sel!(setScheduleMaster:)),
+                mtm,
+            )
+        };
+        schedule_master.setFrame(NSRect::new(
+            NSPoint::new(20.0, 160.0),
+            NSSize::new(440.0, 20.0),
+        ));
+        content_view.addSubview(&schedule_master);
+
+        // "From" label + HH:MM text field.
+        let from_label = NSTextField::labelWithString(ns_string!("From:"), mtm);
+        from_label.setFrame(NSRect::new(
+            NSPoint::new(40.0, 129.0),
+            NSSize::new(40.0, 20.0),
+        ));
+        content_view.addSubview(&from_label);
+
+        let schedule_from_frame = NSRect::new(NSPoint::new(80.0, 125.0), NSSize::new(70.0, 24.0));
+        let schedule_from =
+            NSTextField::initWithFrame(NSTextField::alloc(mtm), schedule_from_frame);
+        schedule_from.setBezeled(true);
+        schedule_from.setEditable(true);
+        schedule_from.setSelectable(true);
+        schedule_from.setStringValue(ns_string!("09:00"));
+        unsafe {
+            schedule_from.setTarget(Some(handler_obj));
+            schedule_from.setAction(Some(sel!(setScheduleField:)));
+        }
+        content_view.addSubview(&schedule_from);
+
+        let to_label = NSTextField::labelWithString(ns_string!("To:"), mtm);
+        to_label.setFrame(NSRect::new(
+            NSPoint::new(170.0, 129.0),
+            NSSize::new(30.0, 20.0),
+        ));
+        content_view.addSubview(&to_label);
+
+        let schedule_to_frame = NSRect::new(NSPoint::new(200.0, 125.0), NSSize::new(70.0, 24.0));
+        let schedule_to = NSTextField::initWithFrame(NSTextField::alloc(mtm), schedule_to_frame);
+        schedule_to.setBezeled(true);
+        schedule_to.setEditable(true);
+        schedule_to.setSelectable(true);
+        schedule_to.setStringValue(ns_string!("17:00"));
+        unsafe {
+            schedule_to.setTarget(Some(handler_obj));
+            schedule_to.setAction(Some(sel!(setScheduleField:)));
+        }
+        content_view.addSubview(&schedule_to);
+
+        // Seven day-of-week checkboxes laid out across the row.
+        let day_titles = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+        // 7 buttons, 60px each starting at x=20 -> end at x=440. Plenty of margin.
+        let day_buttons = day_titles.map(|title| {
+            let btn = unsafe {
+                NSButton::checkboxWithTitle_target_action(
+                    &NSString::from_str(title),
+                    Some(handler_obj),
+                    Some(sel!(setScheduleField:)),
+                    mtm,
+                )
+            };
+            // Default to checked so a freshly-ticked master maps to "every day".
+            btn.setState(NSControlStateValueOn);
+            btn
+        });
+        for (i, btn) in day_buttons.iter().enumerate() {
+            btn.setFrame(NSRect::new(
+                NSPoint::new(20.0 + (i as f64) * 60.0, 90.0),
+                NSSize::new(58.0, 20.0),
+            ));
+            content_view.addSubview(btn);
+        }
 
         // Close button (bottom-right).
         let close_button = unsafe {
@@ -425,6 +619,10 @@ impl PreferencesWindow {
             duration_popup,
             battery_checkbox,
             battery_field,
+            schedule_master,
+            schedule_from,
+            schedule_to,
+            schedule_days: day_buttons,
         });
         handler.install(controls.clone(), window.clone());
 
@@ -496,6 +694,46 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
                 .battery_field
                 .setIntegerValue(DEFAULT_BATTERY_PCT as isize);
             controls.battery_field.setEnabled(false);
+        }
+    }
+
+    // Schedule:
+    //   None     → master off, sub-controls disabled, fields show 09:00-17:00
+    //              + all-days defaults so flipping the master on yields a
+    //              sensible starter schedule.
+    //   Some(s)  → master on, fields show s.start/s.end, day buttons reflect
+    //              s.days, sub-controls enabled.
+    match snap.modifiers.schedule.as_ref() {
+        Some(s) => {
+            controls.schedule_master.setState(NSControlStateValueOn);
+            controls
+                .schedule_from
+                .setStringValue(&NSString::from_str(&s.start.format("%H:%M").to_string()));
+            controls
+                .schedule_to
+                .setStringValue(&NSString::from_str(&s.end.format("%H:%M").to_string()));
+            const DAY_FLAGS: [DaysOfWeek; 7] = [
+                DaysOfWeek::MON,
+                DaysOfWeek::TUE,
+                DaysOfWeek::WED,
+                DaysOfWeek::THU,
+                DaysOfWeek::FRI,
+                DaysOfWeek::SAT,
+                DaysOfWeek::SUN,
+            ];
+            for (i, btn) in controls.schedule_days.iter().enumerate() {
+                btn.setState(flag(s.days.contains(DAY_FLAGS[i])));
+            }
+            schedule_set_subcontrols_enabled(controls, true);
+        }
+        None => {
+            controls.schedule_master.setState(NSControlStateValueOff);
+            controls.schedule_from.setStringValue(ns_string!("09:00"));
+            controls.schedule_to.setStringValue(ns_string!("17:00"));
+            for btn in &controls.schedule_days {
+                btn.setState(NSControlStateValueOn);
+            }
+            schedule_set_subcontrols_enabled(controls, false);
         }
     }
 }
