@@ -328,6 +328,18 @@ where
         window.show(&self.runtime.snapshot(), mtm);
     }
 
+    fn check_for_updates(&self) {
+        // The HTTP fetch blocks; do it on a worker thread to keep
+        // AppKit responsive. When the fetch returns, hop back to the
+        // main thread for the NSAlert.
+        std::thread::spawn(move || {
+            let result = update_check_for_menubar();
+            crate::main_thread::run_on_main(move || {
+                show_update_alert(result);
+            });
+        });
+    }
+
     fn quit(&self) {
         // 1. Release runtime side-effects (helper sleep prevention + display
         //    assertion) without persisting `enabled = false` to disk.
@@ -426,4 +438,183 @@ where
         }
         self.refresh();
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// "Check for updates…" worker + alert. These run as free functions
+// because they don't need any RuntimeActions state -- only the
+// updater module and the AppKit main-thread NSAlert.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Result handed from the worker thread to the main-thread alert
+/// presenter. Carries everything needed to render the dialog without
+/// any more IO from the main thread.
+enum UpdateCheckOutcome {
+    UpToDate {
+        current: String,
+    },
+    HomebrewUpdate {
+        latest: String,
+    },
+    ManualUpdate {
+        latest: String,
+        release: crate::updater::release::ReleaseInfo,
+    },
+    DevBuildRefused {
+        path: std::path::PathBuf,
+    },
+    Error {
+        message: String,
+    },
+}
+
+fn update_check_for_menubar() -> UpdateCheckOutcome {
+    use crate::updater::{install_detect, release};
+    let release = match release::fetch_latest() {
+        Ok(r) => r,
+        Err(e) => {
+            return UpdateCheckOutcome::Error {
+                message: format!("Couldn't reach the update server: {e:#}"),
+            };
+        }
+    };
+    let available = match release::is_newer_than_current(&release.tag_name) {
+        Ok(v) => v,
+        Err(e) => {
+            return UpdateCheckOutcome::Error {
+                message: format!("Couldn't parse the latest version: {e:#}"),
+            };
+        }
+    };
+    let current = match release::current_version() {
+        Ok(v) => v.to_string(),
+        Err(e) => {
+            return UpdateCheckOutcome::Error {
+                message: format!("Couldn't parse the current version: {e:#}"),
+            };
+        }
+    };
+    let latest = match release::strip_v_prefix(&release.tag_name) {
+        Ok(s) => s.to_string(),
+        Err(e) => {
+            return UpdateCheckOutcome::Error {
+                message: format!("Couldn't parse the release tag: {e:#}"),
+            };
+        }
+    };
+    if !available {
+        return UpdateCheckOutcome::UpToDate { current };
+    }
+    match install_detect::detect() {
+        install_detect::InstallMethod::Homebrew => UpdateCheckOutcome::HomebrewUpdate { latest },
+        install_detect::InstallMethod::Dev { path } => UpdateCheckOutcome::DevBuildRefused { path },
+        install_detect::InstallMethod::Manual => {
+            UpdateCheckOutcome::ManualUpdate { latest, release }
+        }
+    }
+}
+
+fn show_update_alert(outcome: UpdateCheckOutcome) {
+    use objc2_app_kit::{NSAlert, NSAlertStyle, NSApplication};
+    use objc2_foundation::NSString;
+    let Some(mtm) = MainThreadMarker::new() else {
+        tracing::error!("show_update_alert: not on main thread; dropping result");
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    app.activate();
+    let alert = NSAlert::new(mtm);
+    alert.setAlertStyle(NSAlertStyle::Informational);
+
+    match outcome {
+        UpdateCheckOutcome::UpToDate { current } => {
+            alert.setMessageText(&NSString::from_str("OpenLid is up to date"));
+            alert.setInformativeText(&NSString::from_str(&format!(
+                "You're on the latest version (v{current})."
+            )));
+            alert.addButtonWithTitle(&NSString::from_str("OK"));
+            alert.runModal();
+        }
+        UpdateCheckOutcome::HomebrewUpdate { latest } => {
+            alert.setMessageText(&NSString::from_str(&format!("Update available: v{latest}")));
+            alert.setInformativeText(&NSString::from_str(
+                "This is a Homebrew install. To update, run:\n\n  brew upgrade openlid",
+            ));
+            alert.addButtonWithTitle(&NSString::from_str("OK"));
+            alert.runModal();
+        }
+        UpdateCheckOutcome::DevBuildRefused { path } => {
+            alert.setMessageText(&NSString::from_str("Dev build detected"));
+            alert.setInformativeText(&NSString::from_str(&format!(
+                "OpenLid is running from {} -- the updater refuses to \
+                 replace a dev build. Rebuild from source instead.",
+                path.display()
+            )));
+            alert.addButtonWithTitle(&NSString::from_str("OK"));
+            alert.runModal();
+        }
+        UpdateCheckOutcome::Error { message } => {
+            alert.setAlertStyle(NSAlertStyle::Warning);
+            alert.setMessageText(&NSString::from_str("Update check failed"));
+            alert.setInformativeText(&NSString::from_str(&message));
+            alert.addButtonWithTitle(&NSString::from_str("OK"));
+            alert.runModal();
+        }
+        UpdateCheckOutcome::ManualUpdate { latest, release } => {
+            alert.setMessageText(&NSString::from_str(&format!("Update available: v{latest}")));
+            // Trim release notes to a manageable size for the alert
+            // info pane. NSAlert grows tall with long text; ~600 chars
+            // keeps it screen-friendly.
+            let notes = release.body.chars().take(600).collect::<String>();
+            let info = if notes.is_empty() {
+                "Install the new version? Your settings will be preserved.".to_string()
+            } else {
+                format!(
+                    "Release notes:\n\n{notes}\n\nInstall the new version? \
+                     Your settings will be preserved."
+                )
+            };
+            alert.setInformativeText(&NSString::from_str(&info));
+            alert.addButtonWithTitle(&NSString::from_str("Install Now"));
+            alert.addButtonWithTitle(&NSString::from_str("Later"));
+            let response = alert.runModal();
+            // NSAlertFirstButtonReturn is 1000; first button is "Install Now".
+            if response == 1000 {
+                if let Err(e) = run_manual_install_from_menubar(&release) {
+                    let err_alert = NSAlert::new(mtm);
+                    err_alert.setAlertStyle(NSAlertStyle::Critical);
+                    err_alert.setMessageText(&NSString::from_str("Install failed"));
+                    err_alert.setInformativeText(&NSString::from_str(&format!("{e:#}")));
+                    err_alert.addButtonWithTitle(&NSString::from_str("OK"));
+                    err_alert.runModal();
+                }
+            }
+        }
+    }
+}
+
+/// Drive the install from the menubar's main thread after the user
+/// clicks "Install Now". On success we terminate NSApplication so the
+/// detached installer's `kill -0 $PARENT_PID` wait unblocks.
+fn run_manual_install_from_menubar(
+    release: &crate::updater::release::ReleaseInfo,
+) -> anyhow::Result<()> {
+    use crate::updater::{install_detect, installer, release as release_mod};
+    let asset = release_mod::pick_dmg_asset(&release.assets)?;
+    let cache = installer::cache_dir()?;
+    installer::prepare_cache(&cache)?;
+    let dmg_path = cache.join(&asset.name);
+    installer::download(&asset.browser_download_url, &dmg_path)?;
+    if let Some(digest) = asset.digest.as_deref() {
+        let hex = release_mod::parse_digest(digest)?;
+        installer::verify_sha256(&dmg_path, &hex)?;
+    }
+    installer::spawn_detached_installer(std::process::id(), &dmg_path, install_detect::APP_PATH)?;
+    // Tell AppKit to exit so the installer's wait-for-parent loop
+    // unblocks. The installer relaunches via `open -b io.openlid.app`.
+    if let Some(mtm) = MainThreadMarker::new() {
+        let app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+        app.terminate(None);
+    }
+    Ok(())
 }

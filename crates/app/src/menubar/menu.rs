@@ -12,6 +12,7 @@
 //! Turn Off    (or "Turn On")                    [action: toggle]
 //! ─────────
 //! Preferences…    ⌘,                            [action: open_preferences]
+//! Check for updates…                            [action: check_for_updates]
 //! ─────────
 //! Quit OpenLid    ⌘Q                            [action: quit]
 //! ```
@@ -35,6 +36,10 @@ pub trait MenuActions: Send + Sync {
     fn show_menu(&self);
     /// "Preferences…" — opens the prefs window.
     fn open_preferences(&self);
+    /// "Check for updates…" — runs the updater check and displays an
+    /// NSAlert with the result; offers an Install button for manual
+    /// installs when newer release is available.
+    fn check_for_updates(&self);
     /// "Quit OpenLid".
     fn quit(&self);
 }
@@ -102,6 +107,14 @@ define_class!(
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(checkForUpdates:))]
+        fn check_for_updates(&self, _sender: Option<&AnyObject>) {
+            if let Some(actions) = self.ivars().actions.get() {
+                actions.check_for_updates();
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(quit:))]
         fn quit(&self, _sender: Option<&AnyObject>) {
             if let Some(actions) = self.ivars().actions.get() {
@@ -156,9 +169,19 @@ pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
     prefs.setKeyEquivalent(ns_string!(","));
     menu.addItem(&prefs);
 
+    // 4. Check for updates. User-initiated only -- no background polling,
+    //    matching the README's "no automatic update checks" stance.
+    let updates = make_item(
+        mtm,
+        "Check for updates…",
+        Some(sel!(checkForUpdates:)),
+        handler_obj,
+    );
+    menu.addItem(&updates);
+
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // 4. Quit.
+    // 5. Quit.
     let quit_item = make_item(mtm, "Quit OpenLid", Some(sel!(quit:)), handler_obj);
     quit_item.setKeyEquivalent(ns_string!("q"));
     menu.addItem(&quit_item);
