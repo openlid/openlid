@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 pub type LidStateCallback = Arc<dyn Fn(LidState) + Send + Sync + 'static>;
 pub type PowerSourceCallback = Arc<dyn Fn(PowerSource) + Send + Sync + 'static>;
+pub type NetworkStateCallback = Arc<dyn Fn(bool) + Send + Sync + 'static>;
 
 pub trait PowerController: Send + Sync {
     fn prevent_sleep(&self) -> Result<(), PlatformError>;
@@ -19,6 +20,23 @@ pub trait LidObserver: Send + Sync {
 pub trait PowerSourceMonitor: Send + Sync {
     fn current(&self) -> PowerSource;
     fn subscribe(&self, callback: PowerSourceCallback);
+}
+
+/// Reachability of an arbitrary stable host on the public Internet
+/// ("can we reach the outside world from any interface").
+///
+/// Reachability is interface-level: this observes link/route state,
+/// not actual packets. The macOS implementation uses
+/// `SCNetworkReachability` against a non-openlid host (`apple.com`)
+/// so a user looking at network activity logs sees no openlid
+/// traffic.
+///
+/// Subscribers receive a callback with `true` (Internet appears
+/// reachable) or `false` (no path out) any time the underlying state
+/// changes. The initial state is observable via `is_reachable()`.
+pub trait NetworkMonitor: Send + Sync {
+    fn is_reachable(&self) -> bool;
+    fn subscribe(&self, callback: NetworkStateCallback);
 }
 
 pub trait DisplayController: Send + Sync {

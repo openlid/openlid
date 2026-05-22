@@ -97,6 +97,8 @@ where
             until: None, // timers are transient — never persisted
             lid: lid.current(),
             power: power_source.current(),
+            network_reachable: true, // optimistic; the monitor publishes the real value at startup
+            network_unreachable_since: None,
         };
 
         let rt = Arc::new(Self {
