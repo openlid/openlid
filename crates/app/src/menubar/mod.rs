@@ -467,6 +467,17 @@ where
         }
         self.refresh();
     }
+
+    fn set_in_transit_timeout(&self, minutes: Option<u32>) {
+        let patch = PrefsPatch {
+            in_transit_timeout_minutes: Some(minutes),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_in_transit_timeout failed: {e:#}");
+        }
+        self.refresh();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────

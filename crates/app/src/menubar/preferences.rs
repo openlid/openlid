@@ -46,11 +46,21 @@ pub trait PrefsActions: Send + Sync {
     /// when transitioning from no-schedule to schedule, so the new gate
     /// has an enabled state to constrain.
     fn set_schedule(&self, schedule: Option<Schedule>);
+    /// Apply an in-transit auto-disable change. `None` disables the
+    /// feature; `Some(n)` sets the timeout in minutes.
+    fn set_in_transit_timeout(&self, minutes: Option<u32>);
 }
 
 /// Default battery-threshold value shown in the disabled numeric field when
 /// the threshold preference is `None`.
 const DEFAULT_BATTERY_PCT: u8 = 20;
+
+/// Default in-transit timeout shown in the disabled numeric field when
+/// the feature is off, and chosen automatically when the user first
+/// ticks the checkbox. 2 minutes is the value suggested during
+/// brainstorming -- short enough to catch a real backpack scenario,
+/// long enough to ride out elevator-Wi-Fi blips.
+const DEFAULT_IN_TRANSIT_MINUTES: u32 = 2;
 
 /// AppKit control handles shared between the Rust wrapper and the Obj-C
 /// handler. The handler needs the text-field handle so it can toggle its
@@ -73,6 +83,8 @@ struct PrefsControls {
     schedule_to: Retained<NSTextField>,
     /// Day-of-week checkboxes in Mon..Sun order.
     schedule_days: [Retained<NSButton>; 7],
+    in_transit_checkbox: Retained<NSButton>,
+    in_transit_field: Retained<NSTextField>,
 }
 
 // SAFETY: see PrefsControls doc.
@@ -160,6 +172,38 @@ define_class!(
 
             if let Some(actions) = self.ivars().actions.get() {
                 actions.set_battery_threshold(pct);
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(setInTransitTimeout:))]
+        fn set_in_transit_timeout(&self, _sender: Option<&AnyObject>) {
+            // Same dual-trigger pattern as the battery threshold:
+            // the checkbox or the text field fires this. We always
+            // read both controls and derive the result.
+            let Some(controls) = self.ivars().controls.get() else {
+                return;
+            };
+            let checkbox_on = controls.in_transit_checkbox.state() == NSControlStateValueOn;
+            controls.in_transit_field.setEnabled(checkbox_on);
+            let minutes = if checkbox_on {
+                let v = controls.in_transit_field.integerValue();
+                // 1..=120 minutes. Out-of-range values fall back to the
+                // sensible default so a user typo can't silently disable
+                // or stretch the safeguard. 120 minutes is a generous
+                // upper bound: longer than that and the feature is
+                // effectively never-fires.
+                let clamped = if (1..=120).contains(&v) {
+                    v as u32
+                } else {
+                    DEFAULT_IN_TRANSIT_MINUTES
+                };
+                Some(clamped)
+            } else {
+                None
+            };
+            if let Some(actions) = self.ivars().actions.get() {
+                actions.set_in_transit_timeout(minutes);
             }
         }
 
@@ -321,10 +365,10 @@ impl PreferencesWindow {
         // Frame is in screen coordinates at construction time; `center()`
         // is called on each show so the origin here is irrelevant.
         //
-        // Height: 440 px. Was 480 before the Default-duration popup was
-        // removed; the top section now sits 40 px lower so battery + schedule
-        // rows keep their original y-coordinates.
-        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 440.0));
+        // Height: 480 px. The in-transit auto-disable row reclaims the
+        // space the Default-duration popup occupied pre-v2.1, so the
+        // top section sits at its original y-coordinates again.
+        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 480.0));
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable;
@@ -351,12 +395,13 @@ impl PreferencesWindow {
         // Build controls. Coordinates are in the content view's coordinate
         // system (origin = bottom-left, y grows upward).
         //
-        // Layout sketch (480 wide, 440 tall content):
-        //   y=350: header text (multi-line, 70 tall)
-        //   y=320: "Start OpenLid at login"
-        //   y=290: "Activate OpenLid at launch"
-        //   y=260: "Keep display awake while preventing sleep"
-        //   y=210: "Turn off when battery is below" [field] %
+        // Layout sketch (480 wide, 480 tall content):
+        //   y=390: header text (multi-line, 70 tall)
+        //   y=360: "Start OpenLid at login"
+        //   y=330: "Activate OpenLid at launch"
+        //   y=300: "Keep display awake while preventing sleep"
+        //   y=250: "Turn off when battery is below" [field] %
+        //   y=200: "Auto-disable in transit"          [field] min
         //   y=160: "Active only during scheduled hours" (master checkbox)
         //   y=125: "From" [HH:MM] "To" [HH:MM]
         //   y= 90: [Mo][Tu][We][Th][Fr][Sa][Su]
@@ -371,7 +416,7 @@ impl PreferencesWindow {
         );
         let header = NSTextField::wrappingLabelWithString(header_text, mtm);
         header.setFrame(NSRect::new(
-            NSPoint::new(20.0, 350.0),
+            NSPoint::new(20.0, 390.0),
             NSSize::new(440.0, 70.0),
         ));
         content_view.addSubview(&header);
@@ -388,7 +433,7 @@ impl PreferencesWindow {
             )
         };
         start_at_login.setFrame(NSRect::new(
-            NSPoint::new(20.0, 320.0),
+            NSPoint::new(20.0, 360.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&start_at_login);
@@ -403,7 +448,7 @@ impl PreferencesWindow {
             )
         };
         activate_at_launch.setFrame(NSRect::new(
-            NSPoint::new(20.0, 290.0),
+            NSPoint::new(20.0, 330.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&activate_at_launch);
@@ -420,7 +465,7 @@ impl PreferencesWindow {
             )
         };
         prevent_display_sleep.setFrame(NSRect::new(
-            NSPoint::new(20.0, 260.0),
+            NSPoint::new(20.0, 300.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&prevent_display_sleep);
@@ -435,12 +480,12 @@ impl PreferencesWindow {
             )
         };
         battery_checkbox.setFrame(NSRect::new(
-            NSPoint::new(20.0, 210.0),
+            NSPoint::new(20.0, 250.0),
             NSSize::new(260.0, 20.0),
         ));
         content_view.addSubview(&battery_checkbox);
 
-        let battery_field_frame = NSRect::new(NSPoint::new(290.0, 206.0), NSSize::new(50.0, 24.0));
+        let battery_field_frame = NSRect::new(NSPoint::new(290.0, 246.0), NSSize::new(50.0, 24.0));
         let battery_field =
             NSTextField::initWithFrame(NSTextField::alloc(mtm), battery_field_frame);
         battery_field.setBezeled(true);
@@ -455,10 +500,48 @@ impl PreferencesWindow {
 
         let percent_label = NSTextField::labelWithString(ns_string!("%"), mtm);
         percent_label.setFrame(NSRect::new(
-            NSPoint::new(346.0, 210.0),
+            NSPoint::new(346.0, 250.0),
             NSSize::new(20.0, 20.0),
         ));
         content_view.addSubview(&percent_label);
+
+        // Checkbox + field + label: in-transit auto-disable.
+        // Mirrors the battery row's visual pattern (checkbox-label, numeric
+        // field, unit label). 1..=120 minute range, defaults to 2.
+        let in_transit_checkbox = unsafe {
+            NSButton::checkboxWithTitle_target_action(
+                ns_string!("Auto-disable in transit"),
+                Some(handler_obj),
+                Some(sel!(setInTransitTimeout:)),
+                mtm,
+            )
+        };
+        in_transit_checkbox.setFrame(NSRect::new(
+            NSPoint::new(20.0, 200.0),
+            NSSize::new(260.0, 20.0),
+        ));
+        content_view.addSubview(&in_transit_checkbox);
+
+        let in_transit_field_frame =
+            NSRect::new(NSPoint::new(290.0, 196.0), NSSize::new(50.0, 24.0));
+        let in_transit_field =
+            NSTextField::initWithFrame(NSTextField::alloc(mtm), in_transit_field_frame);
+        in_transit_field.setBezeled(true);
+        in_transit_field.setEditable(true);
+        in_transit_field.setSelectable(true);
+        in_transit_field.setIntegerValue(DEFAULT_IN_TRANSIT_MINUTES as isize);
+        unsafe {
+            in_transit_field.setTarget(Some(handler_obj));
+            in_transit_field.setAction(Some(sel!(setInTransitTimeout:)));
+        }
+        content_view.addSubview(&in_transit_field);
+
+        let in_transit_min_label = NSTextField::labelWithString(ns_string!("min"), mtm);
+        in_transit_min_label.setFrame(NSRect::new(
+            NSPoint::new(346.0, 200.0),
+            NSSize::new(28.0, 20.0),
+        ));
+        content_view.addSubview(&in_transit_min_label);
 
         // Schedule section. The master checkbox toggles whether a schedule
         // is active; the sub-controls below are visually disabled when off.
@@ -567,6 +650,8 @@ impl PreferencesWindow {
             schedule_from,
             schedule_to,
             schedule_days: day_buttons,
+            in_transit_checkbox,
+            in_transit_field,
         });
         handler.install(controls.clone(), window.clone());
 
@@ -627,6 +712,22 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
                 .battery_field
                 .setIntegerValue(DEFAULT_BATTERY_PCT as isize);
             controls.battery_field.setEnabled(false);
+        }
+    }
+
+    // In-transit auto-disable: same shape as the battery row.
+    match snap.in_transit_timeout_minutes {
+        Some(min) => {
+            controls.in_transit_checkbox.setState(NSControlStateValueOn);
+            controls.in_transit_field.setIntegerValue(min as isize);
+            controls.in_transit_field.setEnabled(true);
+        }
+        None => {
+            controls.in_transit_checkbox.setState(NSControlStateValueOff);
+            controls
+                .in_transit_field
+                .setIntegerValue(DEFAULT_IN_TRANSIT_MINUTES as isize);
+            controls.in_transit_field.setEnabled(false);
         }
     }
 
