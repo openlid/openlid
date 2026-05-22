@@ -231,8 +231,7 @@ fn parse_days_csv(s: &str) -> Result<DaysOfWeek> {
 /// non-empty (start != end). Start > end is *allowed* and signals a window
 /// that crosses midnight — `Schedule::contains` already handles that.
 fn parse_schedule(from: &str, to: &str, days: Option<&str>) -> Result<Schedule> {
-    let start =
-        NaiveTime::parse_from_str(from, "%H:%M").context("expected HH:MM for --from")?;
+    let start = NaiveTime::parse_from_str(from, "%H:%M").context("expected HH:MM for --from")?;
     let end = NaiveTime::parse_from_str(to, "%H:%M").context("expected HH:MM for --to")?;
     if start == end {
         return Err(anyhow!(
@@ -562,7 +561,8 @@ mod tests {
     fn parse_days_csv_uppercase() {
         use openlid_core::mode::DaysOfWeek;
         let got = parse_days_csv("Mon,Tue,Wed,Thu,Fri").unwrap();
-        let want = DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI;
+        let want =
+            DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI;
         assert_eq!(got, want);
     }
 

@@ -15,9 +15,7 @@ use serde::{Deserialize, Serialize};
 /// JSON `null` to the outer `None`, making "missing" and "null" indistinguishable
 /// on the wire. The `#[serde(default)]` attribute on the field handles the
 /// missing-key case; this function handles the present-but-null case.
-fn deserialize_double_option_schedule<'de, D>(
-    d: D,
-) -> Result<Option<Option<Schedule>>, D::Error>
+fn deserialize_double_option_schedule<'de, D>(d: D) -> Result<Option<Option<Schedule>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

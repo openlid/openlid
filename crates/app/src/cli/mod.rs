@@ -179,7 +179,14 @@ mod tests {
     #[test]
     fn parses_schedule_set_with_all_flags() {
         let cli = Cli::try_parse_from([
-            "openlid", "schedule", "set", "--from", "09:00", "--to", "18:00", "--days",
+            "openlid",
+            "schedule",
+            "set",
+            "--from",
+            "09:00",
+            "--to",
+            "18:00",
+            "--days",
             "Mon,Tue,Wed,Thu,Fri",
         ])
         .unwrap();
@@ -198,9 +205,10 @@ mod tests {
         // The default-to-all-days behavior lives in the CLI command layer,
         // not the parser. Parser must keep `days` as `None` so the command
         // layer can distinguish "user omitted" from "user passed empty".
-        let cli =
-            Cli::try_parse_from(["openlid", "schedule", "set", "--from", "08:00", "--to", "18:00"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "openlid", "schedule", "set", "--from", "08:00", "--to", "18:00",
+        ])
+        .unwrap();
         match cli.command {
             Command::Schedule(ScheduleArg::Set { days, .. }) => assert!(days.is_none()),
             other => panic!("expected Schedule(Set), got {other:?}"),
@@ -210,10 +218,7 @@ mod tests {
     #[test]
     fn parses_schedule_clear() {
         let cli = Cli::try_parse_from(["openlid", "schedule", "clear"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Command::Schedule(ScheduleArg::Clear)
-        ));
+        assert!(matches!(cli.command, Command::Schedule(ScheduleArg::Clear)));
     }
 
     #[test]
