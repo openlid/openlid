@@ -30,6 +30,9 @@ toml = { workspace = true }
 interprocess = { workspace = true }
 directories = { workspace = true }
 libc = "0.2"
+ureq = { workspace = true }
+semver = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
