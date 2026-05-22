@@ -1,4 +1,5 @@
-use crate::cli::{ConfigArg, ScheduleArg};
+use crate::cli::{ConfigArg, ScheduleArg, UpdateArg};
+use crate::updater::{install_detect, installer, release};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local, NaiveTime};
 use interprocess::local_socket::{
@@ -375,6 +376,273 @@ pub fn config(c: ConfigArg) -> Result<()> {
             std::process::Command::new(&editor).arg(&path).status()?;
         }
     }
+    Ok(())
+}
+
+/// Compact machine-readable identifier for an install method. Used in
+/// the `--json` output so script consumers can branch without parsing
+/// human text.
+fn install_method_label(method: &install_detect::InstallMethod) -> &'static str {
+    match method {
+        install_detect::InstallMethod::Homebrew => "homebrew",
+        install_detect::InstallMethod::Manual => "manual",
+        install_detect::InstallMethod::Dev { .. } => "dev",
+    }
+}
+
+/// Human-readable update status. Multi-line; suitable for `print!` (no
+/// trailing newline policy enforced -- the caller adds one if it needs
+/// to follow with prompts).
+fn format_update_status_human(
+    current: &str,
+    latest: &str,
+    available: bool,
+    method: &install_detect::InstallMethod,
+) -> String {
+    let mut out = String::new();
+    use std::fmt::Write;
+    writeln!(out, "Current version:  {current}").unwrap();
+    writeln!(out, "Latest version:   {latest}").unwrap();
+    let status = if available {
+        "Update available"
+    } else {
+        "Up to date"
+    };
+    writeln!(out, "Status:           {status}").unwrap();
+    let method_label = match method {
+        install_detect::InstallMethod::Homebrew => "Homebrew",
+        install_detect::InstallMethod::Manual => "Manual install",
+        install_detect::InstallMethod::Dev { .. } => "Dev build (not installable)",
+    };
+    writeln!(out, "Install method:   {method_label}").unwrap();
+    out
+}
+
+/// Pretty-printed JSON status. Pure -- the actual stdout write happens
+/// in the dispatcher.
+fn format_update_status_json(
+    current: &str,
+    latest: &str,
+    available: bool,
+    method: &install_detect::InstallMethod,
+) -> Result<String> {
+    let status = serde_json::json!({
+        "current": current,
+        "latest": latest,
+        "update_available": available,
+        "install_method": install_method_label(method),
+    });
+    Ok(serde_json::to_string_pretty(&status)?)
+}
+
+fn confirm_install(prompt: &str) -> Result<bool> {
+    print!("{prompt} [y/N]: ");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(parse_yes_no(&line))
+}
+
+/// Pure parser for the y/N prompt response. Accepts `y`, `yes`,
+/// case-insensitive; everything else is a "no". Trims whitespace so an
+/// accidental trailing space doesn't trigger an install.
+fn parse_yes_no(input: &str) -> bool {
+    let trimmed = input.trim().to_ascii_lowercase();
+    trimmed == "y" || trimmed == "yes"
+}
+
+/// Validate flag combinations. `--check` (which never installs) and
+/// `--yes` (non-interactive install) are mutually exclusive. Pure so
+/// the conflict message can be regression-tested.
+fn validate_update_flags(arg: &UpdateArg) -> Result<()> {
+    if arg.check && arg.yes {
+        return Err(anyhow!(
+            "--check and --yes are mutually exclusive: --check never installs"
+        ));
+    }
+    Ok(())
+}
+
+/// What the dispatcher should do next, computed from the install
+/// method and the `--yes` flag. Pure -- the actual side-effects
+/// (printing, prompting, installing) happen at the caller; this
+/// function decides which branch to take.
+#[derive(Debug, PartialEq)]
+enum InstallAction {
+    /// Print the homebrew advice; nothing else.
+    HomebrewAdvise,
+    /// Refuse with the dev-build error.
+    DevRefuse(std::path::PathBuf),
+    /// Prompt the user, then install on confirm.
+    PromptThenInstall,
+    /// Skip the prompt and install immediately.
+    InstallNow,
+}
+
+fn decide_install_action(
+    method: &install_detect::InstallMethod,
+    non_interactive: bool,
+) -> InstallAction {
+    match method {
+        install_detect::InstallMethod::Homebrew => InstallAction::HomebrewAdvise,
+        install_detect::InstallMethod::Dev { path } => InstallAction::DevRefuse(path.clone()),
+        install_detect::InstallMethod::Manual if non_interactive => InstallAction::InstallNow,
+        install_detect::InstallMethod::Manual => InstallAction::PromptThenInstall,
+    }
+}
+
+/// Multi-line human message shown to Homebrew users. Pure so the
+/// command-string contract (the exact `brew upgrade openlid`) is
+/// pinned by a test.
+fn format_homebrew_update_advice() -> String {
+    "\nThis is a Homebrew install. To update, run:\n\n  brew upgrade openlid\n".to_string()
+}
+
+/// Error message returned for a dev build. Mentions the path so the
+/// user can spot which checkout they were running from.
+fn format_dev_refusal_message(path: &std::path::Path) -> String {
+    format!(
+        "you appear to be running a dev build at {}; rebuild from source instead",
+        path.display()
+    )
+}
+
+pub fn update(arg: UpdateArg) -> Result<()> {
+    validate_update_flags(&arg)?;
+
+    let release = release::fetch_latest()?;
+    let available = release::is_newer_than_current(&release.tag_name)?;
+    let method = install_detect::detect();
+    let current = release::current_version()?.to_string();
+    let latest = release::strip_v_prefix(&release.tag_name)?.to_string();
+
+    if arg.json {
+        println!(
+            "{}",
+            format_update_status_json(&current, &latest, available, &method)?
+        );
+    } else {
+        print!(
+            "{}",
+            format_update_status_human(&current, &latest, available, &method)
+        );
+    }
+
+    // --check exit semantics: 0 = up to date, 1 = update available.
+    // Use process::exit directly to bypass the standard Err -> exit-1
+    // path so we don't print a redundant "Error: ..." line.
+    if arg.check {
+        if available {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if !available {
+        return Ok(());
+    }
+
+    match decide_install_action(&method, arg.yes) {
+        InstallAction::HomebrewAdvise => {
+            if !arg.json {
+                print!("{}", format_homebrew_update_advice());
+            }
+            Ok(())
+        }
+        InstallAction::DevRefuse(path) => Err(anyhow!(format_dev_refusal_message(&path))),
+        InstallAction::PromptThenInstall => {
+            println!();
+            if !confirm_install("Download and install now?")? {
+                println!("Aborted.");
+                return Ok(());
+            }
+            install_update(&release)
+        }
+        InstallAction::InstallNow => install_update(&release),
+    }
+}
+
+/// Pre-computed plan for `install_update`: which asset to fetch,
+/// where to write it, and (optionally) the SHA-256 to verify against.
+/// Pure construction means the prep logic gets unit coverage without
+/// running the actual download.
+#[derive(Debug)]
+struct InstallPlan {
+    url: String,
+    dest: std::path::PathBuf,
+    download_message: String,
+    digest_hex: Option<String>,
+}
+
+fn prepare_install_plan(
+    release: &release::ReleaseInfo,
+    cache_dir: &std::path::Path,
+) -> Result<InstallPlan> {
+    let asset = release::pick_dmg_asset(&release.assets)?;
+    let dest = cache_dir.join(&asset.name);
+    let download_message = format_download_message(&asset.name, asset.size);
+    let digest_hex = match asset.digest.as_deref() {
+        Some(d) => Some(release::parse_digest(d)?),
+        None => None,
+    };
+    Ok(InstallPlan {
+        url: asset.browser_download_url.clone(),
+        dest,
+        download_message,
+        digest_hex,
+    })
+}
+
+/// `Downloading <name> (<MB>) MB...`. Pure so the exact phrasing the
+/// user sees during a real update is pinned by a test.
+fn format_download_message(name: &str, size: u64) -> String {
+    let mb = (size as f64) / (1024.0 * 1024.0);
+    format!("Downloading {name} ({mb:.1} MB)...")
+}
+
+/// Message printed when the release asset has no digest field. Pure;
+/// pin the wording so a security-relevant log line can't drift.
+fn format_no_digest_warning() -> &'static str {
+    "Note: release has no published checksum; Gatekeeper will still verify \
+     the signature on relaunch."
+}
+
+fn format_install_handoff_message(log_path: &std::path::Path) -> String {
+    format!(
+        "\nOpenLid is installing in the background. It will relaunch in a few seconds.\n\
+         If something goes wrong, check the log at:\n  {}",
+        log_path.display()
+    )
+}
+
+/// Download the DMG, verify its SHA, and hand off to a detached
+/// installer script. Returns Ok immediately after the spawn; the
+/// caller's process exits so the script's wait-for-parent loop can
+/// progress.
+fn install_update(release: &release::ReleaseInfo) -> Result<()> {
+    let cache = installer::cache_dir()?;
+    installer::prepare_cache(&cache)?;
+    let plan = prepare_install_plan(release, &cache)?;
+
+    println!("{}", plan.download_message);
+    installer::download(&plan.url, &plan.dest).context("downloading the DMG")?;
+
+    if let Some(hex) = &plan.digest_hex {
+        println!("Verifying checksum...");
+        installer::verify_sha256(&plan.dest, hex).context("SHA-256 verification")?;
+    } else {
+        tracing::warn!(
+            "release asset has no digest; relying on Gatekeeper code-signature check on relaunch"
+        );
+        println!("{}", format_no_digest_warning());
+    }
+
+    let log = installer::spawn_detached_installer(
+        std::process::id(),
+        &plan.dest,
+        install_detect::APP_PATH,
+    )?;
+    println!("{}", format_install_handoff_message(&log));
     Ok(())
 }
 
@@ -888,6 +1156,326 @@ mod tests {
             }
             other => panic!("expected SetPreferences, got {other:?}"),
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // openlid update — pure formatters
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn install_method_label_maps_each_variant() {
+        // The JSON consumer keys off these strings; a rename would
+        // silently break downstream scripts.
+        assert_eq!(
+            install_method_label(&install_detect::InstallMethod::Homebrew),
+            "homebrew"
+        );
+        assert_eq!(
+            install_method_label(&install_detect::InstallMethod::Manual),
+            "manual"
+        );
+        assert_eq!(
+            install_method_label(&install_detect::InstallMethod::Dev {
+                path: std::path::PathBuf::from("/tmp/x"),
+            }),
+            "dev"
+        );
+    }
+
+    #[test]
+    fn format_update_status_human_shows_up_to_date_when_not_available() {
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Manual,
+        );
+        assert!(out.contains("Current version:  2.0.0"));
+        assert!(out.contains("Latest version:   2.0.0"));
+        assert!(out.contains("Up to date"));
+        assert!(!out.contains("Update available"));
+    }
+
+    #[test]
+    fn format_update_status_human_shows_update_available_when_newer() {
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.1.0",
+            true,
+            &install_detect::InstallMethod::Manual,
+        );
+        assert!(out.contains("Update available"));
+        assert!(out.contains("Latest version:   2.1.0"));
+    }
+
+    #[test]
+    fn format_update_status_human_labels_homebrew_install_method() {
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Homebrew,
+        );
+        assert!(out.contains("Install method:   Homebrew"));
+    }
+
+    #[test]
+    fn format_update_status_human_labels_dev_build_explicitly() {
+        // A dev build user should see "(not installable)" so the
+        // refusal in the dispatcher isn't surprising.
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Dev {
+                path: std::path::PathBuf::from("/tmp/x"),
+            },
+        );
+        assert!(out.contains("Dev build (not installable)"));
+    }
+
+    #[test]
+    fn format_update_status_json_serializes_expected_keys() {
+        // Consumer contract: keys are stable. A test that asserted
+        // string equality on the whole JSON would be brittle to
+        // whitespace; checking key presence is more robust.
+        let out = format_update_status_json(
+            "2.0.0",
+            "2.1.0",
+            true,
+            &install_detect::InstallMethod::Manual,
+        )
+        .unwrap();
+        assert!(out.contains("\"current\""));
+        assert!(out.contains("\"latest\""));
+        assert!(out.contains("\"update_available\""));
+        assert!(out.contains("\"install_method\""));
+        // Sanity: bool serializes as `true` (not `"true"`).
+        assert!(out.contains("\"update_available\": true"));
+    }
+
+    #[test]
+    fn format_update_status_json_emits_homebrew_label() {
+        let out = format_update_status_json(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Homebrew,
+        )
+        .unwrap();
+        assert!(out.contains("\"install_method\": \"homebrew\""));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // openlid update — flag validation, prompt parsing, install routing
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_yes_no_accepts_y_and_yes_case_insensitive() {
+        for s in ["y", "Y", "yes", "YES", "Yes", "  y  ", "\ty\n"] {
+            assert!(parse_yes_no(s), "expected yes for {s:?}");
+        }
+    }
+
+    #[test]
+    fn parse_yes_no_rejects_anything_else() {
+        for s in ["", "n", "no", "yep", "yeah", "1", "true", "ok"] {
+            assert!(!parse_yes_no(s), "expected no for {s:?}");
+        }
+    }
+
+    #[test]
+    fn validate_update_flags_accepts_check_alone() {
+        let arg = UpdateArg {
+            check: true,
+            yes: false,
+            json: false,
+        };
+        validate_update_flags(&arg).expect("check alone should be valid");
+    }
+
+    #[test]
+    fn validate_update_flags_accepts_yes_alone() {
+        let arg = UpdateArg {
+            check: false,
+            yes: true,
+            json: false,
+        };
+        validate_update_flags(&arg).expect("yes alone should be valid");
+    }
+
+    #[test]
+    fn validate_update_flags_rejects_check_and_yes_together() {
+        // --check never installs; --yes is non-interactive install. The
+        // combination is nonsensical and the error message must explain
+        // why so the user knows which flag to drop.
+        let arg = UpdateArg {
+            check: true,
+            yes: true,
+            json: false,
+        };
+        let err = validate_update_flags(&arg).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("--check") && msg.contains("--yes"));
+        assert!(msg.contains("never installs"));
+    }
+
+    #[test]
+    fn decide_install_action_homebrew_advises_regardless_of_yes() {
+        // Homebrew never auto-installs even with --yes; we never want to
+        // race with brew's own metadata.
+        let m = install_detect::InstallMethod::Homebrew;
+        assert_eq!(
+            decide_install_action(&m, false),
+            InstallAction::HomebrewAdvise
+        );
+        assert_eq!(
+            decide_install_action(&m, true),
+            InstallAction::HomebrewAdvise
+        );
+    }
+
+    #[test]
+    fn decide_install_action_dev_refuses_regardless_of_yes() {
+        let p = std::path::PathBuf::from("/tmp/dev/OpenLid.app");
+        let m = install_detect::InstallMethod::Dev { path: p.clone() };
+        assert_eq!(
+            decide_install_action(&m, false),
+            InstallAction::DevRefuse(p.clone())
+        );
+        assert_eq!(decide_install_action(&m, true), InstallAction::DevRefuse(p));
+    }
+
+    #[test]
+    fn decide_install_action_manual_branches_on_yes_flag() {
+        // The --yes flag's whole job is "skip the prompt". A regression
+        // that swapped these branches would either prompt under --yes
+        // (frustrating automation) or silently install without --yes
+        // (frustrating safety).
+        let m = install_detect::InstallMethod::Manual;
+        assert_eq!(
+            decide_install_action(&m, false),
+            InstallAction::PromptThenInstall
+        );
+        assert_eq!(decide_install_action(&m, true), InstallAction::InstallNow);
+    }
+
+    #[test]
+    fn format_homebrew_update_advice_pins_the_exact_command() {
+        // Pin the command string itself: a typo would send users to
+        // run something that doesn't exist (e.g. "brew update openlid"
+        // would target brew itself, not the cask).
+        let out = format_homebrew_update_advice();
+        assert!(out.contains("brew upgrade openlid"));
+        assert!(out.contains("Homebrew"));
+    }
+
+    #[test]
+    fn format_dev_refusal_message_includes_path() {
+        let path = std::path::PathBuf::from("/Users/dev/openlid/target/bundle/OpenLid.app");
+        let msg = format_dev_refusal_message(&path);
+        assert!(msg.contains("dev build"));
+        assert!(msg.contains(&path.display().to_string()));
+        assert!(msg.contains("rebuild from source"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // openlid update — install plan + messages
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn sample_release_with_dmg(digest: Option<&str>) -> release::ReleaseInfo {
+        release::ReleaseInfo {
+            tag_name: "v2.1.0".to_string(),
+            body: "".to_string(),
+            assets: vec![release::AssetInfo {
+                name: "OpenLid-v2.1.0.dmg".to_string(),
+                browser_download_url: "https://example.com/OpenLid-v2.1.0.dmg".to_string(),
+                size: 5 * 1024 * 1024,
+                digest: digest.map(String::from),
+            }],
+        }
+    }
+
+    #[test]
+    fn prepare_install_plan_picks_dmg_and_paths_into_cache() {
+        let release = sample_release_with_dmg(Some("sha256:abc"));
+        let cache = std::path::Path::new("/tmp/cache");
+        let plan = prepare_install_plan(&release, cache).unwrap();
+        assert_eq!(plan.url, "https://example.com/OpenLid-v2.1.0.dmg");
+        assert_eq!(plan.dest, cache.join("OpenLid-v2.1.0.dmg"));
+        assert_eq!(plan.digest_hex.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn prepare_install_plan_handles_missing_digest_gracefully() {
+        // Older releases lack the digest field. The plan must still
+        // succeed; the install loop falls back to Gatekeeper-only
+        // verification (warning printed at install time).
+        let release = sample_release_with_dmg(None);
+        let plan = prepare_install_plan(&release, std::path::Path::new("/tmp/cache")).unwrap();
+        assert!(plan.digest_hex.is_none());
+    }
+
+    #[test]
+    fn prepare_install_plan_propagates_no_dmg_error() {
+        // A release with no DMG asset must surface a clear error
+        // before any download attempt; otherwise we'd download
+        // something else and then fail mysteriously at mount time.
+        let release = release::ReleaseInfo {
+            tag_name: "v2.1.0".to_string(),
+            body: String::new(),
+            assets: vec![release::AssetInfo {
+                name: "checksums.txt".to_string(),
+                browser_download_url: "https://example.com/c.txt".to_string(),
+                size: 100,
+                digest: None,
+            }],
+        };
+        let err = prepare_install_plan(&release, std::path::Path::new("/tmp")).unwrap_err();
+        assert!(format!("{err:#}").contains("no .dmg"));
+    }
+
+    #[test]
+    fn prepare_install_plan_propagates_bad_digest_format() {
+        // A digest with an unrecognised algorithm (e.g. `sha512:`)
+        // must fail at plan time, not mid-download. Catching it here
+        // means the user sees a clear error before bytes hit disk.
+        let release = sample_release_with_dmg(Some("sha512:xx"));
+        let err = prepare_install_plan(&release, std::path::Path::new("/tmp")).unwrap_err();
+        assert!(format!("{err:#}").contains("unsupported digest"));
+    }
+
+    #[test]
+    fn format_download_message_shows_size_in_megabytes() {
+        let msg = format_download_message("OpenLid-v2.1.0.dmg", 5_242_880);
+        assert!(msg.contains("OpenLid-v2.1.0.dmg"));
+        assert!(msg.contains("5.0 MB"));
+    }
+
+    #[test]
+    fn format_download_message_rounds_to_one_decimal_place() {
+        // Pin the formatting precision so a future change to "{mb:.0} MB"
+        // (lossy on small files) gets caught.
+        let msg = format_download_message("a.dmg", 1_500_000);
+        // 1_500_000 / (1024*1024) = 1.43...; "1.4 MB" expected.
+        assert!(msg.contains("1.4 MB"), "got: {msg}");
+    }
+
+    #[test]
+    fn format_no_digest_warning_mentions_gatekeeper() {
+        // The mitigation that justifies skipping checksum verification
+        // is Gatekeeper. If the warning ever drops that word, a
+        // security reviewer would have no way to tell from logs that
+        // the install was still signature-protected.
+        assert!(format_no_digest_warning().contains("Gatekeeper"));
+    }
+
+    #[test]
+    fn format_install_handoff_message_includes_log_path() {
+        let log = std::path::PathBuf::from("/tmp/openlid-installer-12345.log");
+        let msg = format_install_handoff_message(&log);
+        assert!(msg.contains("/tmp/openlid-installer-12345.log"));
+        assert!(msg.contains("relaunch"));
     }
 
     #[test]

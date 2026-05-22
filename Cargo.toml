@@ -38,6 +38,14 @@ tracing-appender = "0.2"
 directories = "6"
 interprocess = { version = "2", features = ["tokio"] }
 
+# Updater (openlid update + menubar Check for updates...)
+# ureq 3 defaults to rustls + bundled webpki-roots; no OpenSSL on the
+# build host. We use the json feature for ergonomic deserialization
+# of the GitHub release response.
+ureq = { version = "3", features = ["json"] }
+semver = "1"
+sha2 = "0.10"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

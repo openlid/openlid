@@ -31,6 +31,10 @@ pub enum Command {
     /// Schedule operations — set, clear, or inspect a recurring time window
     #[command(subcommand)]
     Schedule(ScheduleArg),
+    /// Check for and install a newer release. Homebrew installs are
+    /// routed to `brew upgrade openlid`; manual installs are handled
+    /// in-process.
+    Update(UpdateArg),
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -66,6 +70,24 @@ pub enum ScheduleArg {
     },
 }
 
+#[derive(clap::Args, Debug)]
+pub struct UpdateArg {
+    /// Only check; never install. Exits 0 when up to date, 1 when an
+    /// update is available, 2+ on any error reaching the update server.
+    #[arg(long)]
+    pub check: bool,
+    /// Non-interactive: skip the confirm prompt. Honored only for
+    /// manual installs (Homebrew installs always exit with an
+    /// instruction; dev builds are always refused).
+    #[arg(long)]
+    pub yes: bool,
+    /// Emit machine-readable JSON status. Does not affect the
+    /// install path -- `--json` alone is equivalent to `--check
+    /// --json`.
+    #[arg(long)]
+    pub json: bool,
+}
+
 pub fn run(args: Vec<String>) -> Result<()> {
     let cli = Cli::try_parse_from(&args)?;
     match cli.command {
@@ -76,6 +98,7 @@ pub fn run(args: Vec<String>) -> Result<()> {
         Command::Status { json } => commands::status(json),
         Command::Config(c) => commands::config(c),
         Command::Schedule(s) => commands::schedule(s),
+        Command::Update(arg) => commands::update(arg),
     }
 }
 
@@ -223,5 +246,68 @@ mod tests {
     #[test]
     fn rejects_schedule_without_subcommand() {
         assert!(Cli::try_parse_from(["openlid", "schedule"]).is_err());
+    }
+
+    #[test]
+    fn parses_update_default_flags_all_false() {
+        let cli = Cli::try_parse_from(["openlid", "update"]).unwrap();
+        match cli.command {
+            Command::Update(a) => {
+                assert!(!a.check);
+                assert!(!a.yes);
+                assert!(!a.json);
+            }
+            other => panic!("expected Update, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_update_with_check_flag() {
+        let cli = Cli::try_parse_from(["openlid", "update", "--check"]).unwrap();
+        match cli.command {
+            Command::Update(a) => {
+                assert!(a.check);
+                assert!(!a.yes);
+                assert!(!a.json);
+            }
+            other => panic!("expected Update, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_update_with_yes_flag() {
+        let cli = Cli::try_parse_from(["openlid", "update", "--yes"]).unwrap();
+        match cli.command {
+            Command::Update(a) => {
+                assert!(!a.check);
+                assert!(a.yes);
+            }
+            other => panic!("expected Update, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_update_with_json_flag() {
+        let cli = Cli::try_parse_from(["openlid", "update", "--json"]).unwrap();
+        match cli.command {
+            Command::Update(a) => assert!(a.json),
+            other => panic!("expected Update, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_update_with_all_flags() {
+        // All three flags coexist at the parser level -- the conflict
+        // between --check and --yes is enforced in the command layer
+        // (so the error message can explain *why* they conflict).
+        let cli = Cli::try_parse_from(["openlid", "update", "--check", "--yes", "--json"]).unwrap();
+        match cli.command {
+            Command::Update(a) => {
+                assert!(a.check);
+                assert!(a.yes);
+                assert!(a.json);
+            }
+            other => panic!("expected Update, got {other:?}"),
+        }
     }
 }
