@@ -7,6 +7,7 @@ mod main_thread;
 mod menubar;
 mod platform;
 mod state_runtime;
+mod updater;
 
 use anyhow::Result;
 use std::process::ExitCode;
