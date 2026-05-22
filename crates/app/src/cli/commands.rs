@@ -6,6 +6,7 @@ use interprocess::local_socket::{
 };
 use openlid_core::config::Config;
 use openlid_core::ipc::control::{ControlRequest, ControlResponse, Snapshot};
+use openlid_core::mode::{DaysOfWeek, Schedule};
 use std::io::{BufRead, BufReader, Write};
 use std::time::Duration as StdDuration;
 
@@ -139,7 +140,202 @@ fn format_status_human(s: &Snapshot) -> String {
     if let Some(pct) = s.battery_threshold_pct {
         writeln!(out, "Auto-off below:   {pct}% battery").unwrap();
     }
+    if let Some(sched) = &s.modifiers.schedule {
+        writeln!(out, "Schedule:         {}", format_schedule_inline(sched)).unwrap();
+    }
     out
+}
+
+/// One-liner rendering of a schedule, used by the status output and
+/// `schedule show`. Format: `HH:MM-HH:MM (<day-summary>)`.
+fn format_schedule_inline(s: &Schedule) -> String {
+    format!(
+        "{}-{} ({})",
+        s.start.format("%H:%M"),
+        s.end.format("%H:%M"),
+        day_summary(s.days),
+    )
+}
+
+/// Compact, human-friendly summary of a `DaysOfWeek` set:
+/// * all seven   -> "daily"
+/// * Mon-Fri exactly -> "Mon-Fri"
+/// * Sat,Sun exactly -> "weekends"
+/// * otherwise -> three-letter names in Mon->Sun order, comma-separated.
+fn day_summary(days: DaysOfWeek) -> String {
+    if days == DaysOfWeek::all() {
+        return "daily".to_string();
+    }
+    let weekdays =
+        DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI;
+    if days == weekdays {
+        return "Mon-Fri".to_string();
+    }
+    if days == DaysOfWeek::SAT | DaysOfWeek::SUN {
+        return "weekends".to_string();
+    }
+    const ALL: &[(DaysOfWeek, &str)] = &[
+        (DaysOfWeek::MON, "Mon"),
+        (DaysOfWeek::TUE, "Tue"),
+        (DaysOfWeek::WED, "Wed"),
+        (DaysOfWeek::THU, "Thu"),
+        (DaysOfWeek::FRI, "Fri"),
+        (DaysOfWeek::SAT, "Sat"),
+        (DaysOfWeek::SUN, "Sun"),
+    ];
+    let names: Vec<&str> = ALL
+        .iter()
+        .filter_map(|(f, n)| days.contains(*f).then_some(*n))
+        .collect();
+    names.join(", ")
+}
+
+/// Parse a comma-separated list of three-letter day names into a
+/// `DaysOfWeek` bitflag set. Case-insensitive; whitespace around tokens is
+/// trimmed. An empty input is an error rather than `empty()` so a typo
+/// like `--days ""` can't silently disable the schedule by matching no day.
+fn parse_days_csv(s: &str) -> Result<DaysOfWeek> {
+    let mut days = DaysOfWeek::empty();
+    let mut saw_any = false;
+    for token in s.split(',') {
+        let t = token.trim();
+        if t.is_empty() {
+            continue;
+        }
+        saw_any = true;
+        let flag = match t.to_ascii_lowercase().as_str() {
+            "mon" => DaysOfWeek::MON,
+            "tue" => DaysOfWeek::TUE,
+            "wed" => DaysOfWeek::WED,
+            "thu" => DaysOfWeek::THU,
+            "fri" => DaysOfWeek::FRI,
+            "sat" => DaysOfWeek::SAT,
+            "sun" => DaysOfWeek::SUN,
+            other => {
+                return Err(anyhow!(
+                    "unknown day '{other}' (expected Mon, Tue, Wed, Thu, Fri, Sat, or Sun)"
+                ));
+            }
+        };
+        days |= flag;
+    }
+    if !saw_any {
+        return Err(anyhow!(
+            "at least one day required (e.g. --days Mon,Tue,Wed,Thu,Fri)"
+        ));
+    }
+    Ok(days)
+}
+
+/// Build a `Schedule` from raw CLI arg strings. Validates that the window is
+/// non-empty (start != end). Start > end is *allowed* and signals a window
+/// that crosses midnight — `Schedule::contains` already handles that.
+fn parse_schedule(from: &str, to: &str, days: Option<&str>) -> Result<Schedule> {
+    let start =
+        NaiveTime::parse_from_str(from, "%H:%M").context("expected HH:MM for --from")?;
+    let end = NaiveTime::parse_from_str(to, "%H:%M").context("expected HH:MM for --to")?;
+    if start == end {
+        return Err(anyhow!(
+            "schedule window must be non-empty (--from must differ from --to)"
+        ));
+    }
+    let days = match days {
+        Some(s) => parse_days_csv(s)?,
+        None => DaysOfWeek::all(),
+    };
+    Ok(Schedule { days, start, end })
+}
+
+pub fn schedule(arg: ScheduleArg) -> Result<()> {
+    match arg {
+        ScheduleArg::Set { from, to, days } => schedule_set(&from, &to, days.as_deref()),
+        ScheduleArg::Clear => schedule_clear(),
+        ScheduleArg::Show { json } => schedule_show(json),
+    }
+}
+
+fn schedule_set(from: &str, to: &str, days: Option<&str>) -> Result<()> {
+    let sched = parse_schedule(from, to, days)?;
+
+    // (1) Persist the schedule and mirror into live modifiers.
+    let snapshot = match send_request(
+        ControlRequest::SetPreferences {
+            start_at_login: None,
+            activate_at_launch: None,
+            default_duration_minutes: None,
+            battery_threshold_pct: None,
+            prevent_display_sleep: None,
+            schedule: Some(Some(sched.clone())),
+        },
+        true,
+    )? {
+        ControlResponse::Ok { state } => state,
+        ControlResponse::Error { message } => return Err(anyhow!(message)),
+        _ => return Err(anyhow!("unexpected response")),
+    };
+
+    // (2) If the toggle was OFF, turn it on so the schedule has something
+    // to gate. See the design doc for the rationale (one-step UX matches
+    // the natural-language reading of "allow openlid to run from X to Y").
+    let was_off = !snapshot.enabled;
+    if was_off {
+        match send_request(
+            ControlRequest::SetEnabled {
+                enabled: true,
+                until: None,
+            },
+            true,
+        )? {
+            ControlResponse::Ok { .. } => {}
+            ControlResponse::Error { message } => return Err(anyhow!(message)),
+            _ => return Err(anyhow!("unexpected response")),
+        }
+    }
+
+    println!(
+        "Schedule: {}{}",
+        format_schedule_inline(&sched),
+        if was_off { "; openlid is now ON" } else { "" }
+    );
+    Ok(())
+}
+
+fn schedule_clear() -> Result<()> {
+    match send_request(
+        ControlRequest::SetPreferences {
+            start_at_login: None,
+            activate_at_launch: None,
+            default_duration_minutes: None,
+            battery_threshold_pct: None,
+            prevent_display_sleep: None,
+            schedule: Some(None),
+        },
+        true,
+    )? {
+        ControlResponse::Ok { .. } => {
+            println!("Schedule cleared.");
+            Ok(())
+        }
+        ControlResponse::Error { message } => Err(anyhow!(message)),
+        _ => Err(anyhow!("unexpected response")),
+    }
+}
+
+fn schedule_show(json: bool) -> Result<()> {
+    let snap = match send_request(ControlRequest::GetStatus, true)? {
+        ControlResponse::Ok { state } => state,
+        ControlResponse::Error { message } => return Err(anyhow!(message)),
+        _ => return Err(anyhow!("unexpected response")),
+    };
+    if json {
+        println!("{}", serde_json::to_string_pretty(&snap.modifiers.schedule)?);
+    } else {
+        match snap.modifiers.schedule.as_ref() {
+            Some(s) => println!("Schedule: {}", format_schedule_inline(s)),
+            None => println!("No schedule set."),
+        }
+    }
+    Ok(())
 }
 
 pub fn for_duration(s: &str) -> Result<()> {
@@ -169,13 +365,6 @@ fn parse_until_at(now: DateTime<Local>, s: &str) -> Result<DateTime<Local>> {
         .from_local_datetime(&naive)
         .single()
         .ok_or_else(|| anyhow!("ambiguous local time"))
-}
-
-pub fn schedule(_s: ScheduleArg) -> Result<()> {
-    // Implemented in the next commit. The parser layer is in place so the
-    // help text and shell completion are usable; invoking any subcommand
-    // produces a clear error until then.
-    Err(anyhow!("schedule subcommand not yet implemented"))
 }
 
 pub fn config(c: ConfigArg) -> Result<()> {
@@ -340,6 +529,173 @@ mod tests {
     // into the developer's real v2 dir. CI always passes this guard.
     fn has_real_v1_config() -> bool {
         Config::v1_legacy_path().is_some_and(|p| p.exists())
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // parse_days_csv — comma-separated three-letter day names, case-insensitive
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_days_csv_uppercase() {
+        use openlid_core::mode::DaysOfWeek;
+        let got = parse_days_csv("Mon,Tue,Wed,Thu,Fri").unwrap();
+        let want = DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI;
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn parse_days_csv_case_insensitive() {
+        use openlid_core::mode::DaysOfWeek;
+        // Case mixing is the common user mistake: "mon,TUE,WeD" should parse.
+        let got = parse_days_csv("mon,TUE,WeD").unwrap();
+        assert_eq!(got, DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED);
+    }
+
+    #[test]
+    fn parse_days_csv_trims_whitespace() {
+        use openlid_core::mode::DaysOfWeek;
+        let got = parse_days_csv(" Mon , Fri ").unwrap();
+        assert_eq!(got, DaysOfWeek::MON | DaysOfWeek::FRI);
+    }
+
+    #[test]
+    fn parse_days_csv_all_seven_returns_all() {
+        use openlid_core::mode::DaysOfWeek;
+        let got = parse_days_csv("Mon,Tue,Wed,Thu,Fri,Sat,Sun").unwrap();
+        assert_eq!(got, DaysOfWeek::all());
+    }
+
+    #[test]
+    fn parse_days_csv_rejects_unknown_token_with_name_in_error() {
+        let err = parse_days_csv("Mon,Funday").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.to_lowercase().contains("funday"),
+            "error should name the bad token, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_days_csv_rejects_empty_string() {
+        // Empty after splitting yields zero day flags. Treating this as an
+        // error rather than `DaysOfWeek::empty()` prevents a user from
+        // accidentally creating an inert schedule (matches no day, so the
+        // gate always rejects).
+        let err = parse_days_csv("").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.to_lowercase().contains("at least one"),
+            "error should mention the empty-set problem, got: {msg}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // parse_schedule — combines from/to/days into a Schedule
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_schedule_basic_same_day_window() {
+        use chrono::NaiveTime;
+        use openlid_core::mode::DaysOfWeek;
+        let s = parse_schedule("08:00", "18:00", Some("Mon,Tue")).unwrap();
+        assert_eq!(s.start, NaiveTime::from_hms_opt(8, 0, 0).unwrap());
+        assert_eq!(s.end, NaiveTime::from_hms_opt(18, 0, 0).unwrap());
+        assert_eq!(s.days, DaysOfWeek::MON | DaysOfWeek::TUE);
+    }
+
+    #[test]
+    fn parse_schedule_omitted_days_defaults_to_all_seven() {
+        use openlid_core::mode::DaysOfWeek;
+        let s = parse_schedule("08:00", "18:00", None).unwrap();
+        assert_eq!(s.days, DaysOfWeek::all());
+    }
+
+    #[test]
+    fn parse_schedule_rejects_equal_from_and_to() {
+        let err = parse_schedule("09:00", "09:00", None).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.to_lowercase().contains("non-empty") || msg.to_lowercase().contains("empty"),
+            "error should explain the zero-length window, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_schedule_rejects_invalid_time_format() {
+        let err = parse_schedule("nope", "18:00", None).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("HH:MM"),
+            "error should hint at HH:MM, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_schedule_allows_cross_midnight_window() {
+        // start > end is the cross-midnight signal that Schedule::contains
+        // already handles. The CLI must NOT reject it as invalid.
+        let s = parse_schedule("22:00", "02:00", Some("Mon")).unwrap();
+        assert!(s.start > s.end);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // day_summary — human-readable rendering for the status line
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn day_summary_all_seven_is_daily() {
+        use openlid_core::mode::DaysOfWeek;
+        assert_eq!(day_summary(DaysOfWeek::all()), "daily");
+    }
+
+    #[test]
+    fn day_summary_weekdays_is_mon_fri() {
+        use openlid_core::mode::DaysOfWeek;
+        let weekdays =
+            DaysOfWeek::MON | DaysOfWeek::TUE | DaysOfWeek::WED | DaysOfWeek::THU | DaysOfWeek::FRI;
+        assert_eq!(day_summary(weekdays), "Mon-Fri");
+    }
+
+    #[test]
+    fn day_summary_weekends_is_named() {
+        use openlid_core::mode::DaysOfWeek;
+        assert_eq!(day_summary(DaysOfWeek::SAT | DaysOfWeek::SUN), "weekends");
+    }
+
+    #[test]
+    fn day_summary_arbitrary_subset_is_comma_separated_in_mon_to_sun_order() {
+        use openlid_core::mode::DaysOfWeek;
+        let s = day_summary(DaysOfWeek::WED | DaysOfWeek::MON | DaysOfWeek::FRI);
+        assert_eq!(s, "Mon, Wed, Fri");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // format_status_human — schedule line presence/absence
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_status_includes_schedule_when_set() {
+        use chrono::NaiveTime;
+        use openlid_core::mode::{DaysOfWeek, Schedule};
+        let mut s = snap();
+        s.modifiers.schedule = Some(Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        });
+        let out = format_status_human(&s);
+        assert!(
+            out.contains("Schedule:") && out.contains("09:00-18:00") && out.contains("daily"),
+            "got: {out}"
+        );
+    }
+
+    #[test]
+    fn format_status_omits_schedule_line_when_none() {
+        // Guard against an accidental always-print regression: a default
+        // snapshot must not include the Schedule line at all.
+        let out = format_status_human(&snap());
+        assert!(!out.contains("Schedule:"), "got: {out}");
     }
 
     #[test]
