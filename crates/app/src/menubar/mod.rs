@@ -12,7 +12,8 @@ mod status_item;
 use crate::control_server;
 use crate::helper_client::{HelperClient, HelperPowerController};
 use crate::platform::macos::{
-    display::MacDisplayController, lid_monitor::MacLidMonitor, power_source::MacPowerSourceMonitor,
+    display::MacDisplayController, lid_monitor::MacLidMonitor, network_monitor::MacNetworkMonitor,
+    power_source::MacPowerSourceMonitor,
 };
 use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
@@ -58,6 +59,17 @@ pub fn run() -> Result<()> {
     let display = Arc::new(MacDisplayController::new());
     let client = Arc::new(HelperClient::new()?);
     let power = Arc::new(HelperPowerController::new(client.clone()));
+    // Reachability monitor. Held for app lifetime; subscription
+    // wiring lands when state_runtime gains the in-transit timer
+    // path. Best-effort: failure here just logs and continues with
+    // the detector effectively disabled.
+    let _network = match MacNetworkMonitor::start() {
+        Ok(m) => Some(Arc::new(m)),
+        Err(e) => {
+            tracing::warn!("network monitor failed to start: {e:#}");
+            None
+        }
+    };
 
     // State runtime. `migrate_v1_to_v2` is a one-shot no-op once v2's
     // config exists; on a fresh v1 → v2 upgrade it copies the v1 config to

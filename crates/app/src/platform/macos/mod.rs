@@ -2,4 +2,5 @@
 pub mod display;
 pub mod iokit_ffi;
 pub mod lid_monitor;
+pub mod network_monitor;
 pub mod power_source;
