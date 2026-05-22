@@ -94,10 +94,7 @@ pub fn fetch_latest() -> Result<ReleaseInfo> {
     let url = "https://api.github.com/repos/openlid/openlid/releases/latest";
     let mut resp = ureq::get(url)
         .header("Accept", "application/vnd.github+json")
-        .header(
-            "User-Agent",
-            concat!("openlid/", env!("CARGO_PKG_VERSION")),
-        )
+        .header("User-Agent", concat!("openlid/", env!("CARGO_PKG_VERSION")))
         .call()
         .context("fetching latest release from GitHub")?;
     let body = resp
@@ -135,7 +132,7 @@ mod tests {
             }
           ]
         }"###
-        .to_string()
+            .to_string()
     }
 
     #[test]

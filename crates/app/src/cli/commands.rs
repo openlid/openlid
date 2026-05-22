@@ -1,4 +1,5 @@
-use crate::cli::{ConfigArg, ScheduleArg};
+use crate::cli::{ConfigArg, ScheduleArg, UpdateArg};
+use crate::updater::{install_detect, installer, release};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local, NaiveTime};
 use interprocess::local_socket::{
@@ -377,6 +378,182 @@ pub fn config(c: ConfigArg) -> Result<()> {
     }
     Ok(())
 }
+
+/// Compact machine-readable identifier for an install method. Used in
+/// the `--json` output so script consumers can branch without parsing
+/// human text.
+fn install_method_label(method: &install_detect::InstallMethod) -> &'static str {
+    match method {
+        install_detect::InstallMethod::Homebrew => "homebrew",
+        install_detect::InstallMethod::Manual => "manual",
+        install_detect::InstallMethod::Dev { .. } => "dev",
+    }
+}
+
+/// Human-readable update status. Multi-line; suitable for `print!` (no
+/// trailing newline policy enforced -- the caller adds one if it needs
+/// to follow with prompts).
+fn format_update_status_human(
+    current: &str,
+    latest: &str,
+    available: bool,
+    method: &install_detect::InstallMethod,
+) -> String {
+    let mut out = String::new();
+    use std::fmt::Write;
+    writeln!(out, "Current version:  {current}").unwrap();
+    writeln!(out, "Latest version:   {latest}").unwrap();
+    let status = if available {
+        "Update available"
+    } else {
+        "Up to date"
+    };
+    writeln!(out, "Status:           {status}").unwrap();
+    let method_label = match method {
+        install_detect::InstallMethod::Homebrew => "Homebrew",
+        install_detect::InstallMethod::Manual => "Manual install",
+        install_detect::InstallMethod::Dev { .. } => "Dev build (not installable)",
+    };
+    writeln!(out, "Install method:   {method_label}").unwrap();
+    out
+}
+
+/// Pretty-printed JSON status. Pure -- the actual stdout write happens
+/// in the dispatcher.
+fn format_update_status_json(
+    current: &str,
+    latest: &str,
+    available: bool,
+    method: &install_detect::InstallMethod,
+) -> Result<String> {
+    let status = serde_json::json!({
+        "current": current,
+        "latest": latest,
+        "update_available": available,
+        "install_method": install_method_label(method),
+    });
+    Ok(serde_json::to_string_pretty(&status)?)
+}
+
+fn confirm_install(prompt: &str) -> Result<bool> {
+    print!("{prompt} [y/N]: ");
+    std::io::stdout().flush()?;
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    let trimmed = line.trim().to_ascii_lowercase();
+    Ok(trimmed == "y" || trimmed == "yes")
+}
+
+pub fn update(arg: UpdateArg) -> Result<()> {
+    if arg.check && arg.yes {
+        return Err(anyhow!(
+            "--check and --yes are mutually exclusive: --check never installs"
+        ));
+    }
+
+    let release = release::fetch_latest()?;
+    let available = release::is_newer_than_current(&release.tag_name)?;
+    let method = install_detect::detect();
+    let current = release::current_version()?.to_string();
+    let latest = release::strip_v_prefix(&release.tag_name)?.to_string();
+
+    if arg.json {
+        println!(
+            "{}",
+            format_update_status_json(&current, &latest, available, &method)?
+        );
+    } else {
+        print!(
+            "{}",
+            format_update_status_human(&current, &latest, available, &method)
+        );
+    }
+
+    // --check exit semantics: 0 = up to date, 1 = update available.
+    // Use process::exit directly to bypass the standard Err -> exit-1
+    // path so we don't print a redundant "Error: ..." line.
+    if arg.check {
+        if available {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    if !available {
+        return Ok(());
+    }
+
+    match method {
+        install_detect::InstallMethod::Homebrew => {
+            if !arg.json {
+                println!();
+                println!("This is a Homebrew install. To update, run:");
+                println!();
+                println!("  brew upgrade openlid");
+                println!();
+            }
+            Ok(())
+        }
+        install_detect::InstallMethod::Dev { path } => Err(anyhow!(
+            "you appear to be running a dev build at {}; rebuild from source instead",
+            path.display()
+        )),
+        install_detect::InstallMethod::Manual => {
+            if !arg.yes {
+                println!();
+                if !confirm_install("Download and install now?")? {
+                    println!("Aborted.");
+                    return Ok(());
+                }
+            }
+            install_update(&release)
+        }
+    }
+}
+
+/// Download the DMG, verify its SHA, and hand off to a detached
+/// installer script. Returns Ok immediately after the spawn; the
+/// caller's process exits so the script's wait-for-parent loop can
+/// progress.
+fn install_update(release: &release::ReleaseInfo) -> Result<()> {
+    let asset = release::pick_dmg_asset(&release.assets)?;
+    let cache = installer::cache_dir()?;
+    installer::prepare_cache(&cache)?;
+    let dmg_path = cache.join(&asset.name);
+
+    println!(
+        "Downloading {} ({:.1} MB)...",
+        asset.name,
+        (asset.size as f64) / (1024.0 * 1024.0)
+    );
+    installer::download(&asset.browser_download_url, &dmg_path).context("downloading the DMG")?;
+
+    if let Some(digest) = asset.digest.as_deref() {
+        let hex = release::parse_digest(digest)?;
+        println!("Verifying checksum...");
+        installer::verify_sha256(&dmg_path, &hex).context("SHA-256 verification")?;
+    } else {
+        tracing::warn!(
+            "release asset has no digest; relying on Gatekeeper code-signature check on relaunch"
+        );
+        println!(
+            "Note: release has no published checksum; Gatekeeper will still verify \
+             the signature on relaunch."
+        );
+    }
+
+    let log = installer::spawn_detached_installer(
+        std::process::id(),
+        &dmg_path,
+        install_detect::APP_PATH,
+    )?;
+    println!();
+    println!("OpenLid is installing in the background. It will relaunch in a few seconds.");
+    println!("If something goes wrong, check the log at:");
+    println!("  {}", log.display());
+    Ok(())
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -888,6 +1065,114 @@ mod tests {
             }
             other => panic!("expected SetPreferences, got {other:?}"),
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // openlid update — pure formatters
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn install_method_label_maps_each_variant() {
+        // The JSON consumer keys off these strings; a rename would
+        // silently break downstream scripts.
+        assert_eq!(
+            install_method_label(&install_detect::InstallMethod::Homebrew),
+            "homebrew"
+        );
+        assert_eq!(
+            install_method_label(&install_detect::InstallMethod::Manual),
+            "manual"
+        );
+        assert_eq!(
+            install_method_label(&install_detect::InstallMethod::Dev {
+                path: std::path::PathBuf::from("/tmp/x"),
+            }),
+            "dev"
+        );
+    }
+
+    #[test]
+    fn format_update_status_human_shows_up_to_date_when_not_available() {
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Manual,
+        );
+        assert!(out.contains("Current version:  2.0.0"));
+        assert!(out.contains("Latest version:   2.0.0"));
+        assert!(out.contains("Up to date"));
+        assert!(!out.contains("Update available"));
+    }
+
+    #[test]
+    fn format_update_status_human_shows_update_available_when_newer() {
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.1.0",
+            true,
+            &install_detect::InstallMethod::Manual,
+        );
+        assert!(out.contains("Update available"));
+        assert!(out.contains("Latest version:   2.1.0"));
+    }
+
+    #[test]
+    fn format_update_status_human_labels_homebrew_install_method() {
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Homebrew,
+        );
+        assert!(out.contains("Install method:   Homebrew"));
+    }
+
+    #[test]
+    fn format_update_status_human_labels_dev_build_explicitly() {
+        // A dev build user should see "(not installable)" so the
+        // refusal in the dispatcher isn't surprising.
+        let out = format_update_status_human(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Dev {
+                path: std::path::PathBuf::from("/tmp/x"),
+            },
+        );
+        assert!(out.contains("Dev build (not installable)"));
+    }
+
+    #[test]
+    fn format_update_status_json_serializes_expected_keys() {
+        // Consumer contract: keys are stable. A test that asserted
+        // string equality on the whole JSON would be brittle to
+        // whitespace; checking key presence is more robust.
+        let out = format_update_status_json(
+            "2.0.0",
+            "2.1.0",
+            true,
+            &install_detect::InstallMethod::Manual,
+        )
+        .unwrap();
+        assert!(out.contains("\"current\""));
+        assert!(out.contains("\"latest\""));
+        assert!(out.contains("\"update_available\""));
+        assert!(out.contains("\"install_method\""));
+        // Sanity: bool serializes as `true` (not `"true"`).
+        assert!(out.contains("\"update_available\": true"));
+    }
+
+    #[test]
+    fn format_update_status_json_emits_homebrew_label() {
+        let out = format_update_status_json(
+            "2.0.0",
+            "2.0.0",
+            false,
+            &install_detect::InstallMethod::Homebrew,
+        )
+        .unwrap();
+        assert!(out.contains("\"install_method\": \"homebrew\""));
     }
 
     #[test]

@@ -26,7 +26,9 @@ pub enum InstallMethod {
     /// The running binary is not under `/Applications/OpenLid.app`,
     /// e.g. a developer running from `target/`. The path is carried so
     /// the user can be told exactly what we saw.
-    Dev { path: PathBuf },
+    Dev {
+        path: PathBuf,
+    },
 }
 
 /// The canonical install location for end-user builds.
@@ -74,17 +76,13 @@ mod tests {
 
     #[test]
     fn classify_intel_homebrew_caskroom_is_homebrew() {
-        let p = PathBuf::from(
-            "/usr/local/Caskroom/openlid/2.0.0/OpenLid.app",
-        );
+        let p = PathBuf::from("/usr/local/Caskroom/openlid/2.0.0/OpenLid.app");
         assert_eq!(classify(&p), InstallMethod::Homebrew);
     }
 
     #[test]
     fn classify_arm_homebrew_caskroom_is_homebrew() {
-        let p = PathBuf::from(
-            "/opt/homebrew/Caskroom/openlid/2.0.0/OpenLid.app",
-        );
+        let p = PathBuf::from("/opt/homebrew/Caskroom/openlid/2.0.0/OpenLid.app");
         assert_eq!(classify(&p), InstallMethod::Homebrew);
     }
 
@@ -103,9 +101,7 @@ mod tests {
         // must not have their checked-out tree replaced by the
         // updater. Classify as Dev so the CLI refuses with a clear
         // message.
-        let p = PathBuf::from(
-            "/Users/dev/code/openlid/target/bundle/OpenLid.app",
-        );
+        let p = PathBuf::from("/Users/dev/code/openlid/target/bundle/OpenLid.app");
         match classify(&p) {
             InstallMethod::Dev { path } => assert_eq!(path, p),
             other => panic!("expected Dev, got {other:?}"),
@@ -117,9 +113,7 @@ mod tests {
         // A path that contains `/usr/local/` but NOT
         // `/usr/local/Caskroom/openlid` must not be misclassified. The
         // check is on the Caskroom prefix specifically.
-        let p = PathBuf::from(
-            "/usr/local/share/something/OpenLid.app",
-        );
+        let p = PathBuf::from("/usr/local/share/something/OpenLid.app");
         assert!(!matches!(classify(&p), InstallMethod::Homebrew));
     }
 
@@ -129,9 +123,7 @@ mod tests {
         // prefix substring with `/Applications/OpenLid.app`. The
         // classifier compares full paths, not substrings, so a path
         // like this must NOT classify as `Manual`.
-        let p = PathBuf::from(
-            "/Users/x/Library/Application Support/io.openlid.app",
-        );
+        let p = PathBuf::from("/Users/x/Library/Application Support/io.openlid.app");
         assert!(!matches!(classify(&p), InstallMethod::Manual));
     }
 }

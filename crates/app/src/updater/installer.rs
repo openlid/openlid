@@ -48,8 +48,8 @@ pub fn download(url: &str, dest: &Path) -> Result<()> {
         .call()
         .with_context(|| format!("downloading {url}"))?;
     let mut reader = resp.body_mut().as_reader();
-    let mut out = std::fs::File::create(dest)
-        .with_context(|| format!("creating {}", dest.display()))?;
+    let mut out =
+        std::fs::File::create(dest).with_context(|| format!("creating {}", dest.display()))?;
     std::io::copy(&mut reader, &mut out)
         .with_context(|| format!("writing to {}", dest.display()))?;
     Ok(())
@@ -106,10 +106,8 @@ pub fn spawn_detached_installer(
     use std::os::unix::process::CommandExt;
 
     let script = render_installer_script(parent_pid, dmg_path, app_path);
-    let script_path =
-        std::env::temp_dir().join(format!("openlid-installer-{parent_pid}.sh"));
-    let log_path =
-        std::env::temp_dir().join(format!("openlid-installer-{parent_pid}.log"));
+    let script_path = std::env::temp_dir().join(format!("openlid-installer-{parent_pid}.sh"));
+    let log_path = std::env::temp_dir().join(format!("openlid-installer-{parent_pid}.log"));
 
     {
         let mut f = std::fs::File::create(&script_path)
@@ -217,11 +215,7 @@ mod tests {
         // Defence against a typo in the template: if a future edit
         // misnames a placeholder, this test would catch it before the
         // wrong literal got embedded in /tmp.
-        let out = render_installer_script(
-            1,
-            Path::new("/tmp/x.dmg"),
-            "/Applications/OpenLid.app",
-        );
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
         assert!(
             !out.contains("__"),
             "output still contains a `__` placeholder: {out}"
@@ -232,11 +226,7 @@ mod tests {
     fn render_installer_script_starts_with_shebang() {
         // Sanity: a missing shebang line would make the kernel reject
         // the script. Pin the contract so a future edit can't drop it.
-        let out = render_installer_script(
-            1,
-            Path::new("/tmp/x.dmg"),
-            "/Applications/OpenLid.app",
-        );
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
         assert!(out.starts_with("#!/bin/sh"), "got: {}", &out[..40]);
     }
 
@@ -246,11 +236,7 @@ mod tests {
         // preceded by a stage step. Pin this so a future refactor
         // can't accidentally remove the staging step and leave a
         // partial install on disk.
-        let out = render_installer_script(
-            1,
-            Path::new("/tmp/x.dmg"),
-            "/Applications/OpenLid.app",
-        );
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
         let staging = out
             .find("cp -R \"$VOLUME_PATH/OpenLid.app\" \"${APP_PATH}.new\"")
             .expect("staging step missing");
