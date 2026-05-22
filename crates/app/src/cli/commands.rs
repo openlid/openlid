@@ -1,4 +1,4 @@
-use crate::cli::ConfigArg;
+use crate::cli::{ConfigArg, ScheduleArg};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone};
 use interprocess::local_socket::{
@@ -169,6 +169,13 @@ fn parse_until_at(now: DateTime<Local>, s: &str) -> Result<DateTime<Local>> {
         .from_local_datetime(&naive)
         .single()
         .ok_or_else(|| anyhow!("ambiguous local time"))
+}
+
+pub fn schedule(_s: ScheduleArg) -> Result<()> {
+    // Implemented in the next commit. The parser layer is in place so the
+    // help text and shell completion are usable; invoking any subcommand
+    // produces a clear error until then.
+    Err(anyhow!("schedule subcommand not yet implemented"))
 }
 
 pub fn config(c: ConfigArg) -> Result<()> {
