@@ -19,4 +19,5 @@
 //! `~/Library/Application Support/io.openlid.app/config.toml`, outside
 //! the .app bundle. Swapping the bundle doesn't touch any user state.
 
+pub mod install_detect;
 pub mod release;
