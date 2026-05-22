@@ -1,11 +1,11 @@
 //! Native macOS Preferences window.
 //!
-//! A single `NSWindow` with four controls — start-at-login, activate-at-launch,
-//! a default-duration popup, and a battery-threshold checkbox + numeric field.
-//! Each control routes through one selector on `PrefsHandler` which calls into
-//! a `PrefsActions` trait object. The outer `RuntimeActions` impl translates
-//! each call into a single-field `PrefsPatch` and dispatches it through
-//! `StateRuntime::set_preferences`.
+//! A single `NSWindow` with start-at-login, activate-at-launch, keep-display-
+//! awake, a battery-threshold checkbox + numeric field, and a recurring-
+//! schedule section. Each control routes through one selector on `PrefsHandler`
+//! which calls into a `PrefsActions` trait object. The outer `RuntimeActions`
+//! impl translates each call into a single-field `PrefsPatch` and dispatches
+//! it through `StateRuntime::set_preferences`.
 //!
 //! Threading: all construction and all callbacks happen on the main thread —
 //! the menu click that opens the window, the AppKit action invocations after
@@ -23,8 +23,8 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSBackingStoreType, NSButton, NSControlStateValueOff, NSControlStateValueOn, NSPopUpButton,
-    NSTextField, NSWindow, NSWindowStyleMask,
+    NSBackingStoreType, NSButton, NSControlStateValueOff, NSControlStateValueOn, NSTextField,
+    NSWindow, NSWindowStyleMask,
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
@@ -39,7 +39,6 @@ use std::sync::Arc;
 pub trait PrefsActions: Send + Sync {
     fn set_start_at_login(&self, enabled: bool);
     fn set_activate_at_launch(&self, enabled: bool);
-    fn set_default_duration(&self, minutes: Option<u32>);
     fn set_battery_threshold(&self, pct: Option<u8>);
     fn set_prevent_display_sleep(&self, enabled: bool);
     /// Apply a schedule update. `None` clears any existing schedule;
@@ -52,19 +51,6 @@ pub trait PrefsActions: Send + Sync {
 /// Default battery-threshold value shown in the disabled numeric field when
 /// the threshold preference is `None`.
 const DEFAULT_BATTERY_PCT: u8 = 20;
-
-/// The "Default duration" popup entries. `(label, minutes)` — `minutes == 0`
-/// means indefinite (no timer). Matches the activate-for submenu in `menu.rs`.
-const DURATION_ENTRIES: &[(&str, isize)] = &[
-    ("Indefinitely", 0),
-    ("5 minutes", 5),
-    ("10 minutes", 10),
-    ("15 minutes", 15),
-    ("30 minutes", 30),
-    ("1 hour", 60),
-    ("2 hours", 120),
-    ("5 hours", 300),
-];
 
 /// AppKit control handles shared between the Rust wrapper and the Obj-C
 /// handler. The handler needs the text-field handle so it can toggle its
@@ -80,7 +66,6 @@ struct PrefsControls {
     start_at_login: Retained<NSButton>,
     activate_at_launch: Retained<NSButton>,
     prevent_display_sleep: Retained<NSButton>,
-    duration_popup: Retained<NSPopUpButton>,
     battery_checkbox: Retained<NSButton>,
     battery_field: Retained<NSTextField>,
     schedule_master: Retained<NSButton>,
@@ -140,21 +125,6 @@ define_class!(
             let state = checkbox_state(sender);
             if let Some(actions) = self.ivars().actions.get() {
                 actions.set_prevent_display_sleep(state);
-            }
-        }
-
-        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
-        #[unsafe(method(setDefaultDuration:))]
-        fn set_default_duration(&self, sender: Option<&AnyObject>) {
-            // The sender is the NSPopUpButton itself; read the selected item's
-            // tag (minutes; 0 = indefinite).
-            let tag: isize = match sender {
-                Some(s) => unsafe { msg_send![s, selectedTag] },
-                None => 0,
-            };
-            let minutes = if tag <= 0 { None } else { Some(tag as u32) };
-            if let Some(actions) = self.ivars().actions.get() {
-                actions.set_default_duration(minutes);
             }
         }
 
@@ -351,10 +321,10 @@ impl PreferencesWindow {
         // Frame is in screen coordinates at construction time; `center()`
         // is called on each show so the origin here is irrelevant.
         //
-        // Height grew from 360 to 480 to fit the schedule section below the
-        // battery row. AppKit y is bottom-up, so adding 120 pixels means the
-        // existing controls move UP by 120 from their previous y-coordinates.
-        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 480.0));
+        // Height: 440 px. Was 480 before the Default-duration popup was
+        // removed; the top section now sits 40 px lower so battery + schedule
+        // rows keep their original y-coordinates.
+        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 440.0));
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable;
@@ -381,12 +351,11 @@ impl PreferencesWindow {
         // Build controls. Coordinates are in the content view's coordinate
         // system (origin = bottom-left, y grows upward).
         //
-        // Layout sketch (480 wide, 480 tall content):
-        //   y=390: header text (multi-line, 70 tall)
-        //   y=360: "Start Open-Lid at login"
-        //   y=330: "Activate Open-Lid at launch"
-        //   y=300: "Keep display awake while preventing sleep"
-        //   y=250: "Default duration:"  [popup]
+        // Layout sketch (480 wide, 440 tall content):
+        //   y=350: header text (multi-line, 70 tall)
+        //   y=320: "Start Open-Lid at login"
+        //   y=290: "Activate Open-Lid at launch"
+        //   y=260: "Keep display awake while preventing sleep"
         //   y=210: "Turn off when battery is below" [field] %
         //   y=160: "Active only during scheduled hours" (master checkbox)
         //   y=125: "From" [HH:MM] "To" [HH:MM]
@@ -402,7 +371,7 @@ impl PreferencesWindow {
         );
         let header = NSTextField::wrappingLabelWithString(header_text, mtm);
         header.setFrame(NSRect::new(
-            NSPoint::new(20.0, 390.0),
+            NSPoint::new(20.0, 350.0),
             NSSize::new(440.0, 70.0),
         ));
         content_view.addSubview(&header);
@@ -419,7 +388,7 @@ impl PreferencesWindow {
             )
         };
         start_at_login.setFrame(NSRect::new(
-            NSPoint::new(20.0, 360.0),
+            NSPoint::new(20.0, 320.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&start_at_login);
@@ -434,7 +403,7 @@ impl PreferencesWindow {
             )
         };
         activate_at_launch.setFrame(NSRect::new(
-            NSPoint::new(20.0, 330.0),
+            NSPoint::new(20.0, 290.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&activate_at_launch);
@@ -451,34 +420,10 @@ impl PreferencesWindow {
             )
         };
         prevent_display_sleep.setFrame(NSRect::new(
-            NSPoint::new(20.0, 300.0),
+            NSPoint::new(20.0, 260.0),
             NSSize::new(440.0, 20.0),
         ));
         content_view.addSubview(&prevent_display_sleep);
-
-        // Label + popup: Default duration.
-        let duration_label = NSTextField::labelWithString(ns_string!("Default duration:"), mtm);
-        duration_label.setFrame(NSRect::new(
-            NSPoint::new(20.0, 254.0),
-            NSSize::new(130.0, 20.0),
-        ));
-        content_view.addSubview(&duration_label);
-
-        let popup_frame = NSRect::new(NSPoint::new(150.0, 250.0), NSSize::new(180.0, 26.0));
-        let duration_popup =
-            NSPopUpButton::initWithFrame_pullsDown(NSPopUpButton::alloc(mtm), popup_frame, false);
-        for (label, minutes) in DURATION_ENTRIES {
-            let ns_label = NSString::from_str(label);
-            duration_popup.addItemWithTitle(&ns_label);
-            if let Some(item) = duration_popup.itemAtIndex(duration_popup.numberOfItems() - 1) {
-                item.setTag(*minutes);
-            }
-        }
-        unsafe {
-            duration_popup.setTarget(Some(handler_obj));
-            duration_popup.setAction(Some(sel!(setDefaultDuration:)));
-        }
-        content_view.addSubview(&duration_popup);
 
         // Checkbox + field + label: Battery threshold.
         let battery_checkbox = unsafe {
@@ -616,7 +561,6 @@ impl PreferencesWindow {
             start_at_login,
             activate_at_launch,
             prevent_display_sleep,
-            duration_popup,
             battery_checkbox,
             battery_field,
             schedule_master,
@@ -667,17 +611,6 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
     controls
         .prevent_display_sleep
         .setState(flag(snap.prevent_display_sleep));
-
-    // Default duration: select the matching tag, falling back to 0 = "Indefinitely".
-    let target_tag: isize = snap
-        .default_duration_minutes
-        .map(|m| m as isize)
-        .unwrap_or(0);
-    let selected = controls.duration_popup.selectItemWithTag(target_tag);
-    if !selected {
-        // No exact match — fall back to "Indefinitely" (tag 0).
-        controls.duration_popup.selectItemWithTag(0);
-    }
 
     // Battery threshold:
     //   None     → checkbox off, field shows default (e.g. 20), field disabled.

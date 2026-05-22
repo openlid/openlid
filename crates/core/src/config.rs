@@ -28,7 +28,7 @@ pub const SCHEMA_VERSION: u32 = 1;
 ///     only one actively wired in v1 is `min_battery`, exposed via the
 ///     `battery_threshold_pct` preference).
 ///   * UX preferences: `start_at_login`, `activate_at_launch`,
-///     `default_duration_minutes`, `battery_threshold_pct`.
+///     `battery_threshold_pct`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     /// Schema version. Used to detect configs written by a newer binary.
@@ -52,11 +52,6 @@ pub struct Config {
     /// users expect from menu-bar utilities.
     #[serde(default)]
     pub activate_at_launch: bool,
-
-    /// Default timer duration for single-click activations, in minutes.
-    /// `None` means indefinite (no timer set).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_duration_minutes: Option<u32>,
 
     /// Auto-deactivate when battery falls below this percent.
     /// `None` disables this safeguard.
@@ -102,7 +97,6 @@ impl Default for Config {
             modifiers: Modifiers::default(),
             start_at_login: false,
             activate_at_launch: false,
-            default_duration_minutes: None,
             battery_threshold_pct: None,
             prevent_display_sleep: true,
         }
@@ -246,7 +240,6 @@ mod tests {
             },
             start_at_login: true,
             activate_at_launch: false,
-            default_duration_minutes: Some(30),
             battery_threshold_pct: Some(20),
             prevent_display_sleep: false,
         };
@@ -267,7 +260,6 @@ mod tests {
             modifiers: Modifiers::default(),
             start_at_login: true,
             activate_at_launch: false,
-            default_duration_minutes: Some(45),
             battery_threshold_pct: None,
             prevent_display_sleep: true,
         };
@@ -295,7 +287,7 @@ mod tests {
 
         // v2 already has a different config; migration must not touch it.
         let v2_cfg = Config {
-            default_duration_minutes: Some(120),
+            battery_threshold_pct: Some(15),
             ..Config::default()
         };
         v2_cfg.save(&v2).unwrap();
@@ -375,7 +367,6 @@ mod tests {
         let cfg = Config::default();
         assert!(!cfg.start_at_login);
         assert!(!cfg.activate_at_launch);
-        assert!(cfg.default_duration_minutes.is_none());
         assert!(cfg.battery_threshold_pct.is_none());
     }
 

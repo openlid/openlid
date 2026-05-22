@@ -1,6 +1,6 @@
 use crate::cli::{ConfigArg, ScheduleArg};
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone};
+use chrono::{DateTime, Local, NaiveTime};
 use interprocess::local_socket::{
     traits::Stream as StreamTrait, GenericFilePath, Stream, ToFsName,
 };
@@ -69,20 +69,9 @@ fn print_set_result(resp: ControlResponse) -> Result<()> {
     }
 }
 
-/// `openlid on` — activate using the user's Default duration preference.
-/// If Default duration is None (indefinite), starts an unbounded session.
-pub fn on_default_duration() -> Result<()> {
-    // We have to ask the running app what the user's default is. The simplest
-    // path: GetStatus first, read default_duration_minutes, then SetEnabled.
-    let snap = match send_request(ControlRequest::GetStatus, true)? {
-        ControlResponse::Ok { state } => state,
-        ControlResponse::Error { message } => return Err(anyhow!(message)),
-        _ => return Err(anyhow!("unexpected response")),
-    };
-    let until = snap
-        .default_duration_minutes
-        .map(|m| Local::now() + Duration::minutes(m as i64));
-    print_set_result(set(true, until)?)
+/// `openlid on` — start an indefinite (no-timer) session.
+pub fn on() -> Result<()> {
+    print_set_result(set(true, None)?)
 }
 
 pub fn off() -> Result<()> {
@@ -280,7 +269,6 @@ fn build_set_schedule_request(sched: Schedule) -> ControlRequest {
     ControlRequest::SetPreferences {
         start_at_login: None,
         activate_at_launch: None,
-        default_duration_minutes: None,
         battery_threshold_pct: None,
         prevent_display_sleep: None,
         schedule: Some(Some(sched)),
@@ -294,7 +282,6 @@ fn build_clear_schedule_request() -> ControlRequest {
     ControlRequest::SetPreferences {
         start_at_login: None,
         activate_at_launch: None,
-        default_duration_minutes: None,
         battery_threshold_pct: None,
         prevent_display_sleep: None,
         schedule: Some(None),
@@ -370,35 +357,6 @@ fn format_schedule_show_json(sched: Option<&Schedule>) -> Result<String> {
     Ok(serde_json::to_string_pretty(&sched)?)
 }
 
-pub fn for_duration(s: &str) -> Result<()> {
-    let dur = humantime::parse_duration(s).context("invalid duration")?;
-    let until: DateTime<Local> = Local::now() + Duration::from_std(dur)?;
-    print_set_result(set(true, Some(until))?)
-}
-
-pub fn until(s: &str) -> Result<()> {
-    let until = parse_until(s)?;
-    print_set_result(set(true, Some(until))?)
-}
-
-fn parse_until(s: &str) -> Result<DateTime<Local>> {
-    parse_until_at(Local::now(), s)
-}
-
-fn parse_until_at(now: DateTime<Local>, s: &str) -> Result<DateTime<Local>> {
-    if let Ok(t) = NaiveTime::parse_from_str(s, "%H:%M") {
-        let today = now.date_naive().and_time(t);
-        let dt = Local.from_local_datetime(&today).single().unwrap();
-        return Ok(if dt > now { dt } else { dt + Duration::days(1) });
-    }
-    let naive = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M")
-        .context("expected HH:MM or YYYY-MM-DDTHH:MM")?;
-    Local
-        .from_local_datetime(&naive)
-        .single()
-        .ok_or_else(|| anyhow!("ambiguous local time"))
-}
-
 pub fn config(c: ConfigArg) -> Result<()> {
     // One-shot v1 → v2 migration on first use after upgrade. No-op once v2
     // config exists. Done here too (not just on menubar launch) so a user
@@ -423,54 +381,9 @@ pub fn config(c: ConfigArg) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use openlid_core::ipc::control::HelperStatus;
     use openlid_core::mode::{LidState, Modifiers, PowerSource};
-
-    // ─────────────────────────────────────────────────────────────────────
-    // parse_until_at — pure date logic with an injected `now`
-    // ─────────────────────────────────────────────────────────────────────
-
-    fn fixed_now() -> DateTime<Local> {
-        // Wednesday 2026-05-14, 12:00:00 local. Well clear of midnight,
-        // and the date sits outside any DST transition for IANA TZs on
-        // any plausible CI runner.
-        Local.with_ymd_and_hms(2026, 5, 14, 12, 0, 0).unwrap()
-    }
-
-    #[test]
-    fn parse_until_at_hhmm_in_future_today_rolls_into_today() {
-        let got = parse_until_at(fixed_now(), "18:00").unwrap();
-        assert_eq!(got, Local.with_ymd_and_hms(2026, 5, 14, 18, 0, 0).unwrap());
-    }
-
-    #[test]
-    fn parse_until_at_hhmm_in_past_today_rolls_into_tomorrow() {
-        let got = parse_until_at(fixed_now(), "09:00").unwrap();
-        assert_eq!(got, Local.with_ymd_and_hms(2026, 5, 15, 9, 0, 0).unwrap());
-    }
-
-    #[test]
-    fn parse_until_at_hhmm_equal_to_now_rolls_into_tomorrow() {
-        // Current behavior is `dt > now`; equality lands in the else branch.
-        let got = parse_until_at(fixed_now(), "12:00").unwrap();
-        assert_eq!(got, Local.with_ymd_and_hms(2026, 5, 15, 12, 0, 0).unwrap());
-    }
-
-    #[test]
-    fn parse_until_at_full_iso_returns_that_exact_datetime() {
-        let got = parse_until_at(fixed_now(), "2026-12-25T08:30").unwrap();
-        assert_eq!(got, Local.with_ymd_and_hms(2026, 12, 25, 8, 30, 0).unwrap());
-    }
-
-    #[test]
-    fn parse_until_at_invalid_string_returns_error_with_format_hint() {
-        let err = parse_until_at(fixed_now(), "not a time").unwrap_err();
-        let msg = format!("{err:#}");
-        assert!(
-            msg.contains("expected HH:MM"),
-            "unexpected error message: {msg}",
-        );
-    }
 
     // ─────────────────────────────────────────────────────────────────────
     // format_status_human — pure formatter
@@ -487,7 +400,6 @@ mod tests {
             helper: HelperStatus::Running,
             start_at_login: false,
             activate_at_launch: false,
-            default_duration_minutes: None,
             battery_threshold_pct: None,
             prevent_display_sleep: false,
         }
@@ -950,14 +862,12 @@ mod tests {
             ControlRequest::SetPreferences {
                 start_at_login,
                 activate_at_launch,
-                default_duration_minutes,
                 battery_threshold_pct,
                 prevent_display_sleep,
                 ..
             } => {
                 assert!(start_at_login.is_none());
                 assert!(activate_at_launch.is_none());
-                assert!(default_duration_minutes.is_none());
                 assert!(battery_threshold_pct.is_none());
                 assert!(prevent_display_sleep.is_none());
             }

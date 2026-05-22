@@ -45,8 +45,6 @@ pub enum ControlRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         activate_at_launch: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        default_duration_minutes: Option<Option<u32>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         battery_threshold_pct: Option<Option<u8>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prevent_display_sleep: Option<bool>,
@@ -82,7 +80,6 @@ pub struct Snapshot {
     /// extra round-trip.
     pub start_at_login: bool,
     pub activate_at_launch: bool,
-    pub default_duration_minutes: Option<u32>,
     pub battery_threshold_pct: Option<u8>,
     /// Mirrors `Config::prevent_display_sleep`. When `true`, the runtime
     /// holds an IOPMAssertion that keeps the display awake (and therefore
@@ -136,7 +133,6 @@ mod tests {
             helper: HelperStatus::Running,
             start_at_login: false,
             activate_at_launch: false,
-            default_duration_minutes: None,
             battery_threshold_pct: Some(20),
             prevent_display_sleep: true,
         };
@@ -173,7 +169,6 @@ mod tests {
         let r = ControlRequest::SetPreferences {
             start_at_login: None,
             activate_at_launch: None,
-            default_duration_minutes: None,
             battery_threshold_pct: None,
             prevent_display_sleep: None,
             schedule: Some(Some(sched)),
@@ -206,7 +201,6 @@ mod tests {
         let r = ControlRequest::SetPreferences {
             start_at_login: None,
             activate_at_launch: None,
-            default_duration_minutes: None,
             battery_threshold_pct: None,
             prevent_display_sleep: None,
             schedule: Some(None),

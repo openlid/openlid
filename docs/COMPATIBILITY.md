@@ -4,13 +4,14 @@ Open-Lid v2.x adheres to [Semantic Versioning](https://semver.org/). This
 document defines exactly which surfaces are covered by that promise.
 Anything not listed here may change in any release.
 
-> **v1 → v2 was a rename, not a redesign.** The CLI binary, cask, and
-> Cargo crates were renamed from `open-lid` to `openlid`. The
-> configuration directory moved from `io.openlid.open-lid` to
-> `io.openlid.app`. Subcommands, flags, exit codes, config field names,
-> control-socket wire shapes, and helper XPC method signatures are all
-> unchanged — every v2.x stable surface is preserved verbatim under its
-> new name. See `CHANGELOG.md` for the full v2.0.0 migration notes.
+> **v2.1 dropped timed sessions.** The `for` and `until` CLI
+> subcommands, the "Activate for" menubar submenu, the "Default duration"
+> preference, and the `default_duration_minutes` config field were
+> removed in favor of the recurring `schedule` feature. `openlid on`
+> always starts an indefinite session now. These surfaces were listed as
+> stable in this document under v2.0; the project decided in v2.1 that
+> they were low-impact enough to trim early rather than carry to v3.0.
+> See `CHANGELOG.md` for the full v2.1.0 migration notes.
 
 ## Stable surfaces
 
@@ -21,8 +22,9 @@ requires a v3.0 release.
 
 Stable:
 
-- Subcommand names (`on`, `off`, `status`, `for`, `until`, `config`).
-- Flag names (e.g. `--json` on `status`).
+- Subcommand names (`on`, `off`, `status`, `config`, `schedule`).
+- Flag names (e.g. `--json` on `status`, `--from`/`--to`/`--days` on
+  `schedule set`).
 - Exit codes (0 = success; non-zero = failure with a stderr diagnostic).
 - The semantic behavior of each subcommand.
 - The structure and field names of `status --json` output.
@@ -50,7 +52,6 @@ Stable: every field name currently in the schema (see
 - `start_at_login`
 - `activate_at_launch`
 - `prevent_display_sleep`
-- `default_duration_minutes`
 - `battery_threshold_pct`
 - `[modifiers]` sub-table (`only_on_ac`, `min_battery`, `schedule`)
 
@@ -126,8 +127,9 @@ build understands.
 v2.0 wires in the first migration hook: `Config::load_with_v1_fallback`
 reads from the v1 directory (`io.openlid.open-lid`) on first launch when
 the v2 directory doesn't exist yet, so users upgrading from v1 keep
-their settings. A future v3 may introduce schema-level (in-file) migration
-for `config.toml` itself; v2 only handles the directory rename.
+their settings. v2.1 drops the `default_duration_minutes` field — serde's
+`unknown_fields` tolerance means v2.1 binaries silently ignore it on
+v2.0-era configs, so the upgrade path requires no manual migration.
 
 ## Not stable
 

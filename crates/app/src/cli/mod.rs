@@ -16,7 +16,7 @@ pub enum Command {
     Menubar,
     /// Run as privileged helper (used by launchd)
     Helper,
-    /// Turn on sleep prevention (uses Default duration from Preferences)
+    /// Turn on sleep prevention (indefinite — use `schedule` for time windows)
     On,
     /// Turn off sleep prevention
     Off,
@@ -25,10 +25,6 @@ pub enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Activate with a timer for a duration (e.g., 2h, 30m, 1h30m)
-    For { duration: String },
-    /// Activate with a timer until a wall-clock time (HH:MM or YYYY-MM-DDTHH:MM)
-    Until { time: String },
     /// Config operations
     #[command(subcommand)]
     Config(ConfigArg),
@@ -75,11 +71,9 @@ pub fn run(args: Vec<String>) -> Result<()> {
     match cli.command {
         Command::Menubar => crate::menubar::run(),
         Command::Helper => anyhow::bail!("the 'helper' role is for launchd only"),
-        Command::On => commands::on_default_duration(),
+        Command::On => commands::on(),
         Command::Off => commands::off(),
         Command::Status { json } => commands::status(json),
-        Command::For { duration } => commands::for_duration(&duration),
-        Command::Until { time } => commands::until(&time),
         Command::Config(c) => commands::config(c),
         Command::Schedule(s) => commands::schedule(s),
     }
@@ -126,24 +120,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_for_with_duration_arg() {
-        let cli = Cli::try_parse_from(["openlid", "for", "2h"]).unwrap();
-        match cli.command {
-            Command::For { duration } => assert_eq!(duration, "2h"),
-            other => panic!("expected For, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_until_with_time_arg() {
-        let cli = Cli::try_parse_from(["openlid", "until", "22:00"]).unwrap();
-        match cli.command {
-            Command::Until { time } => assert_eq!(time, "22:00"),
-            other => panic!("expected Until, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn parses_config_show() {
         let cli = Cli::try_parse_from(["openlid", "config", "show"]).unwrap();
         assert!(matches!(cli.command, Command::Config(ConfigArg::Show)));
@@ -169,11 +145,6 @@ mod tests {
     #[test]
     fn rejects_unknown_subcommand() {
         assert!(Cli::try_parse_from(["openlid", "thisdoesnotexist"]).is_err());
-    }
-
-    #[test]
-    fn rejects_for_without_duration_arg() {
-        assert!(Cli::try_parse_from(["openlid", "for"]).is_err());
     }
 
     #[test]

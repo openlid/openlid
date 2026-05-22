@@ -26,7 +26,6 @@ use std::time::Duration as StdDuration;
 pub struct PrefsPatch {
     pub start_at_login: Option<bool>,
     pub activate_at_launch: Option<bool>,
-    pub default_duration_minutes: Option<Option<u32>>,
     pub battery_threshold_pct: Option<Option<u8>>,
     pub prevent_display_sleep: Option<bool>,
     pub schedule: Option<Option<Schedule>>,
@@ -204,9 +203,6 @@ where
             if let Some(v) = patch.activate_at_launch {
                 cfg.activate_at_launch = v;
             }
-            if let Some(v) = patch.default_duration_minutes {
-                cfg.default_duration_minutes = v;
-            }
             if let Some(v) = patch.battery_threshold_pct {
                 cfg.battery_threshold_pct = v;
                 // Propagate to the modifier the decision function reads.
@@ -259,7 +255,6 @@ where
             helper: openlid_core::ipc::control::HelperStatus::Running,
             start_at_login: cfg.start_at_login,
             activate_at_launch: cfg.activate_at_launch,
-            default_duration_minutes: cfg.default_duration_minutes,
             battery_threshold_pct: cfg.battery_threshold_pct,
             prevent_display_sleep: cfg.prevent_display_sleep,
         }
@@ -788,30 +783,7 @@ mod tests {
         let snap2 = rt.snapshot();
         assert_eq!(snap2.start_at_login, snap1.start_at_login);
         assert_eq!(snap2.activate_at_launch, snap1.activate_at_launch);
-        assert_eq!(
-            snap2.default_duration_minutes,
-            snap1.default_duration_minutes
-        );
         assert_eq!(snap2.battery_threshold_pct, snap1.battery_threshold_pct);
-    }
-
-    #[test]
-    fn prefs_patch_default_duration_can_be_cleared() {
-        // Outer Option<Option<u32>>: outer Some means "update", inner None
-        // means "clear the saved default".
-        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
-        rt.set_preferences(PrefsPatch {
-            default_duration_minutes: Some(Some(30)),
-            ..Default::default()
-        })
-        .unwrap();
-        assert_eq!(rt.snapshot().default_duration_minutes, Some(30));
-        rt.set_preferences(PrefsPatch {
-            default_duration_minutes: Some(None),
-            ..Default::default()
-        })
-        .unwrap();
-        assert!(rt.snapshot().default_duration_minutes.is_none());
     }
 
     #[test]

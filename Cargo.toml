@@ -3,7 +3,7 @@ members = ["crates/core", "crates/helper-protocol", "crates/app", "crates/helper
 resolver = "2"
 
 [workspace.package]
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -16,7 +16,7 @@ openlid-core = { path = "crates/core" }
 # Apple bindings (versions verified by Phase 0 spike)
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSDictionary", "NSArray", "NSError", "NSXPCConnection", "NSObject", "NSRunLoop", "block2"] }
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSAlert", "NSCell", "NSPopUpButton", "NSTextField", "NSGraphics"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow", "NSAlert", "NSCell", "NSTextField", "NSGraphics"] }
 block2 = "0.6"
 core-foundation = "0.10"
 security-framework = "3"
@@ -27,7 +27,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1.1"
 chrono = { version = "0.4", features = ["serde"] }
-humantime = "2"
 bitflags = { version = "2", features = ["serde"] }
 
 # Infra

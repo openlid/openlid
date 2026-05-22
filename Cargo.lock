@@ -369,12 +369,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "humantime"
-version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -720,7 +714,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openlid"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -729,7 +723,6 @@ dependencies = [
  "core-foundation",
  "core-foundation-sys",
  "directories",
- "humantime",
  "interprocess",
  "libc",
  "objc2",
@@ -748,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "openlid-core"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "bitflags",
  "chrono",
@@ -763,7 +756,7 @@ dependencies = [
 
 [[package]]
 name = "openlid-helper"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -784,7 +777,7 @@ dependencies = [
 
 [[package]]
 name = "openlid-helper-protocol"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "cc",
  "objc2",
@@ -1552,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "2.0.0"
+version = "2.1.0"
 
 [[package]]
 name = "zmij"

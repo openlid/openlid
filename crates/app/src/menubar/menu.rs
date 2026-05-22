@@ -11,24 +11,10 @@
 //! ─────────
 //! Turn Off    (or "Turn On")                    [action: toggle]
 //! ─────────
-//! Activate for ▸
-//!   Indefinitely                                [tag=0]
-//!   5 minutes                                   [tag=5]
-//!   10 minutes
-//!   15 minutes
-//!   30 minutes
-//!   1 hour                                      [tag=60]
-//!   2 hours                                     [tag=120]
-//!   5 hours                                     [tag=300]
-//! ─────────
 //! Preferences…    ⌘,                            [action: open_preferences]
 //! ─────────
 //! Quit Open-Lid    ⌘Q                           [action: quit]
 //! ```
-//!
-//! All "Activate for" entries share a single selector that reads the menu
-//! item's `tag` (in minutes; 0 = indefinite) and dispatches through
-//! `MenuActions::activate_for_minutes`.
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
@@ -42,13 +28,11 @@ use std::sync::Arc;
 /// Operations the menu can invoke. Implemented over the (generic) StateRuntime
 /// by the outer module so AppKit code only ever sees this trait.
 pub trait MenuActions: Send + Sync {
-    /// Single-click / "Turn On" / "Turn Off". Uses default duration from prefs.
+    /// Single-click / "Turn On" / "Turn Off". Always indefinite — no timer.
     fn toggle(&self);
     /// Right-click or option-click on the status item button: show the menu.
     /// Implementation is expected to call `UIShared::show_menu`.
     fn show_menu(&self);
-    /// Explicit "Activate for N minutes" from the submenu. `None` = indefinite.
-    fn activate_for_minutes(&self, minutes: Option<u32>);
     /// "Preferences…" — opens the prefs window.
     fn open_preferences(&self);
     /// "Quit Open-Lid".
@@ -110,21 +94,6 @@ define_class!(
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
-        #[unsafe(method(activateFor:))]
-        fn activate_for(&self, sender: Option<&AnyObject>) {
-            // Read the NSMenuItem's `tag` to find which duration was selected.
-            // tag = 0 → indefinite, otherwise tag = minutes.
-            let tag: isize = match sender {
-                Some(s) => unsafe { msg_send![s, tag] },
-                None => 0,
-            };
-            let minutes = if tag <= 0 { None } else { Some(tag as u32) };
-            if let Some(actions) = self.ivars().actions.get() {
-                actions.activate_for_minutes(minutes);
-            }
-        }
-
-        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(openPreferences:))]
         fn open_preferences(&self, _sender: Option<&AnyObject>) {
             if let Some(actions) = self.ivars().actions.get() {
@@ -152,18 +121,6 @@ impl MenuHandler {
     }
 }
 
-/// The "Activate for" submenu entries. (label, minutes; minutes=0 → indefinite)
-const ACTIVATE_FOR_ENTRIES: &[(&str, isize)] = &[
-    ("Indefinitely", 0),
-    ("5 minutes", 5),
-    ("10 minutes", 10),
-    ("15 minutes", 15),
-    ("30 minutes", 30),
-    ("1 hour", 60),
-    ("2 hours", 120),
-    ("5 hours", 300),
-];
-
 pub struct BuiltMenu {
     pub menu: Retained<NSMenu>,
     pub status_item: Retained<NSMenuItem>,
@@ -189,21 +146,7 @@ pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // 3. "Activate for" submenu.
-    let activate_for_item = make_item(mtm, "Activate for", None, handler_obj);
-    let submenu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!("Activate for"));
-    submenu.setAutoenablesItems(false);
-    for (label, minutes) in ACTIVATE_FOR_ENTRIES {
-        let item = make_item(mtm, label, Some(sel!(activateFor:)), handler_obj);
-        item.setTag(*minutes);
-        submenu.addItem(&item);
-    }
-    activate_for_item.setSubmenu(Some(&submenu));
-    menu.addItem(&activate_for_item);
-
-    menu.addItem(&NSMenuItem::separatorItem(mtm));
-
-    // 4. Preferences.
+    // 3. Preferences.
     let prefs = make_item(
         mtm,
         "Preferences…",
@@ -215,7 +158,7 @@ pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
 
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
-    // 5. Quit.
+    // 4. Quit.
     let quit_item = make_item(mtm, "Quit Open-Lid", Some(sel!(quit:)), handler_obj);
     quit_item.setKeyEquivalent(ns_string!("q"));
     menu.addItem(&quit_item);
