@@ -562,49 +562,89 @@ pub fn update(arg: UpdateArg) -> Result<()> {
     }
 }
 
+/// Pre-computed plan for `install_update`: which asset to fetch,
+/// where to write it, and (optionally) the SHA-256 to verify against.
+/// Pure construction means the prep logic gets unit coverage without
+/// running the actual download.
+#[derive(Debug)]
+struct InstallPlan {
+    url: String,
+    dest: std::path::PathBuf,
+    download_message: String,
+    digest_hex: Option<String>,
+}
+
+fn prepare_install_plan(
+    release: &release::ReleaseInfo,
+    cache_dir: &std::path::Path,
+) -> Result<InstallPlan> {
+    let asset = release::pick_dmg_asset(&release.assets)?;
+    let dest = cache_dir.join(&asset.name);
+    let download_message = format_download_message(&asset.name, asset.size);
+    let digest_hex = match asset.digest.as_deref() {
+        Some(d) => Some(release::parse_digest(d)?),
+        None => None,
+    };
+    Ok(InstallPlan {
+        url: asset.browser_download_url.clone(),
+        dest,
+        download_message,
+        digest_hex,
+    })
+}
+
+/// `Downloading <name> (<MB>) MB...`. Pure so the exact phrasing the
+/// user sees during a real update is pinned by a test.
+fn format_download_message(name: &str, size: u64) -> String {
+    let mb = (size as f64) / (1024.0 * 1024.0);
+    format!("Downloading {name} ({mb:.1} MB)...")
+}
+
+/// Message printed when the release asset has no digest field. Pure;
+/// pin the wording so a security-relevant log line can't drift.
+fn format_no_digest_warning() -> &'static str {
+    "Note: release has no published checksum; Gatekeeper will still verify \
+     the signature on relaunch."
+}
+
+fn format_install_handoff_message(log_path: &std::path::Path) -> String {
+    format!(
+        "\nOpenLid is installing in the background. It will relaunch in a few seconds.\n\
+         If something goes wrong, check the log at:\n  {}",
+        log_path.display()
+    )
+}
+
 /// Download the DMG, verify its SHA, and hand off to a detached
 /// installer script. Returns Ok immediately after the spawn; the
 /// caller's process exits so the script's wait-for-parent loop can
 /// progress.
 fn install_update(release: &release::ReleaseInfo) -> Result<()> {
-    let asset = release::pick_dmg_asset(&release.assets)?;
     let cache = installer::cache_dir()?;
     installer::prepare_cache(&cache)?;
-    let dmg_path = cache.join(&asset.name);
+    let plan = prepare_install_plan(release, &cache)?;
 
-    println!(
-        "Downloading {} ({:.1} MB)...",
-        asset.name,
-        (asset.size as f64) / (1024.0 * 1024.0)
-    );
-    installer::download(&asset.browser_download_url, &dmg_path).context("downloading the DMG")?;
+    println!("{}", plan.download_message);
+    installer::download(&plan.url, &plan.dest).context("downloading the DMG")?;
 
-    if let Some(digest) = asset.digest.as_deref() {
-        let hex = release::parse_digest(digest)?;
+    if let Some(hex) = &plan.digest_hex {
         println!("Verifying checksum...");
-        installer::verify_sha256(&dmg_path, &hex).context("SHA-256 verification")?;
+        installer::verify_sha256(&plan.dest, hex).context("SHA-256 verification")?;
     } else {
         tracing::warn!(
             "release asset has no digest; relying on Gatekeeper code-signature check on relaunch"
         );
-        println!(
-            "Note: release has no published checksum; Gatekeeper will still verify \
-             the signature on relaunch."
-        );
+        println!("{}", format_no_digest_warning());
     }
 
     let log = installer::spawn_detached_installer(
         std::process::id(),
-        &dmg_path,
+        &plan.dest,
         install_detect::APP_PATH,
     )?;
-    println!();
-    println!("OpenLid is installing in the background. It will relaunch in a few seconds.");
-    println!("If something goes wrong, check the log at:");
-    println!("  {}", log.display());
+    println!("{}", format_install_handoff_message(&log));
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1337,6 +1377,105 @@ mod tests {
         assert!(msg.contains("dev build"));
         assert!(msg.contains(&path.display().to_string()));
         assert!(msg.contains("rebuild from source"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // openlid update — install plan + messages
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn sample_release_with_dmg(digest: Option<&str>) -> release::ReleaseInfo {
+        release::ReleaseInfo {
+            tag_name: "v2.1.0".to_string(),
+            body: "".to_string(),
+            assets: vec![release::AssetInfo {
+                name: "OpenLid-v2.1.0.dmg".to_string(),
+                browser_download_url: "https://example.com/OpenLid-v2.1.0.dmg".to_string(),
+                size: 5 * 1024 * 1024,
+                digest: digest.map(String::from),
+            }],
+        }
+    }
+
+    #[test]
+    fn prepare_install_plan_picks_dmg_and_paths_into_cache() {
+        let release = sample_release_with_dmg(Some("sha256:abc"));
+        let cache = std::path::Path::new("/tmp/cache");
+        let plan = prepare_install_plan(&release, cache).unwrap();
+        assert_eq!(plan.url, "https://example.com/OpenLid-v2.1.0.dmg");
+        assert_eq!(plan.dest, cache.join("OpenLid-v2.1.0.dmg"));
+        assert_eq!(plan.digest_hex.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn prepare_install_plan_handles_missing_digest_gracefully() {
+        // Older releases lack the digest field. The plan must still
+        // succeed; the install loop falls back to Gatekeeper-only
+        // verification (warning printed at install time).
+        let release = sample_release_with_dmg(None);
+        let plan = prepare_install_plan(&release, std::path::Path::new("/tmp/cache")).unwrap();
+        assert!(plan.digest_hex.is_none());
+    }
+
+    #[test]
+    fn prepare_install_plan_propagates_no_dmg_error() {
+        // A release with no DMG asset must surface a clear error
+        // before any download attempt; otherwise we'd download
+        // something else and then fail mysteriously at mount time.
+        let release = release::ReleaseInfo {
+            tag_name: "v2.1.0".to_string(),
+            body: String::new(),
+            assets: vec![release::AssetInfo {
+                name: "checksums.txt".to_string(),
+                browser_download_url: "https://example.com/c.txt".to_string(),
+                size: 100,
+                digest: None,
+            }],
+        };
+        let err = prepare_install_plan(&release, std::path::Path::new("/tmp")).unwrap_err();
+        assert!(format!("{err:#}").contains("no .dmg"));
+    }
+
+    #[test]
+    fn prepare_install_plan_propagates_bad_digest_format() {
+        // A digest with an unrecognised algorithm (e.g. `sha512:`)
+        // must fail at plan time, not mid-download. Catching it here
+        // means the user sees a clear error before bytes hit disk.
+        let release = sample_release_with_dmg(Some("sha512:xx"));
+        let err = prepare_install_plan(&release, std::path::Path::new("/tmp")).unwrap_err();
+        assert!(format!("{err:#}").contains("unsupported digest"));
+    }
+
+    #[test]
+    fn format_download_message_shows_size_in_megabytes() {
+        let msg = format_download_message("OpenLid-v2.1.0.dmg", 5_242_880);
+        assert!(msg.contains("OpenLid-v2.1.0.dmg"));
+        assert!(msg.contains("5.0 MB"));
+    }
+
+    #[test]
+    fn format_download_message_rounds_to_one_decimal_place() {
+        // Pin the formatting precision so a future change to "{mb:.0} MB"
+        // (lossy on small files) gets caught.
+        let msg = format_download_message("a.dmg", 1_500_000);
+        // 1_500_000 / (1024*1024) = 1.43...; "1.4 MB" expected.
+        assert!(msg.contains("1.4 MB"), "got: {msg}");
+    }
+
+    #[test]
+    fn format_no_digest_warning_mentions_gatekeeper() {
+        // The mitigation that justifies skipping checksum verification
+        // is Gatekeeper. If the warning ever drops that word, a
+        // security reviewer would have no way to tell from logs that
+        // the install was still signature-protected.
+        assert!(format_no_digest_warning().contains("Gatekeeper"));
+    }
+
+    #[test]
+    fn format_install_handoff_message_includes_log_path() {
+        let log = std::path::PathBuf::from("/tmp/openlid-installer-12345.log");
+        let msg = format_install_handoff_message(&log);
+        assert!(msg.contains("/tmp/openlid-installer-12345.log"));
+        assert!(msg.contains("relaunch"));
     }
 
     #[test]
