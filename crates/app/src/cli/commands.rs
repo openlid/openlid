@@ -273,6 +273,7 @@ fn build_set_schedule_request(sched: Schedule) -> ControlRequest {
         battery_threshold_pct: None,
         prevent_display_sleep: None,
         schedule: Some(Some(sched)),
+        in_transit_timeout_minutes: None,
     }
 }
 
@@ -286,6 +287,7 @@ fn build_clear_schedule_request() -> ControlRequest {
         battery_threshold_pct: None,
         prevent_display_sleep: None,
         schedule: Some(None),
+        in_transit_timeout_minutes: None,
     }
 }
 
@@ -670,6 +672,7 @@ mod tests {
             activate_at_launch: false,
             battery_threshold_pct: None,
             prevent_display_sleep: false,
+            in_transit_timeout_minutes: None,
         }
     }
 

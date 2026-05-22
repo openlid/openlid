@@ -29,6 +29,10 @@ pub struct PrefsPatch {
     pub battery_threshold_pct: Option<Option<u8>>,
     pub prevent_display_sleep: Option<bool>,
     pub schedule: Option<Option<Schedule>>,
+    /// In-transit auto-disable threshold (minutes). Three-state:
+    /// outer `None` = leave alone, `Some(None)` = clear (feature off),
+    /// `Some(Some(n))` = set to n.
+    pub in_transit_timeout_minutes: Option<Option<u32>>,
 }
 
 /// Notification fired whenever any state-affecting field changes. Listeners
@@ -315,6 +319,17 @@ where
                 self.state.lock().unwrap().modifiers.schedule = v.clone();
                 cfg.modifiers.schedule = v;
             }
+            if let Some(v) = patch.in_transit_timeout_minutes {
+                cfg.in_transit_timeout_minutes = v;
+                // If the user disables the detector while we're in an
+                // unreachable window, clear the timestamp so a future
+                // re-enable doesn't see stale data and fire prematurely.
+                if v.is_none() {
+                    self.state.lock().unwrap().network_unreachable_since = None;
+                    // Invalidate any in-flight sleeper too.
+                    self.in_transit_generation.fetch_add(1, Ordering::SeqCst);
+                }
+            }
         }
 
         // Persist the new config + reconcile the helper *first*, so even if
@@ -355,6 +370,7 @@ where
             activate_at_launch: cfg.activate_at_launch,
             battery_threshold_pct: cfg.battery_threshold_pct,
             prevent_display_sleep: cfg.prevent_display_sleep,
+            in_transit_timeout_minutes: cfg.in_transit_timeout_minutes,
         }
     }
 

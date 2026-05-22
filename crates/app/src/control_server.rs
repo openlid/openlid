@@ -127,12 +127,14 @@ where
             battery_threshold_pct,
             prevent_display_sleep,
             schedule,
+            in_transit_timeout_minutes,
         } => rt.set_preferences(PrefsPatch {
             start_at_login,
             activate_at_launch,
             battery_threshold_pct,
             prevent_display_sleep,
             schedule,
+            in_transit_timeout_minutes,
         }),
     };
     match result {

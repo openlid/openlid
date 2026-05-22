@@ -54,6 +54,8 @@ pub enum ControlRequest {
             deserialize_with = "deserialize_double_option_schedule"
         )]
         schedule: Option<Option<Schedule>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        in_transit_timeout_minutes: Option<Option<u32>>,
     },
     Ping,
 }
@@ -90,6 +92,12 @@ pub struct Snapshot {
     /// feature in the first place).
     #[serde(default)]
     pub prevent_display_sleep: bool,
+    /// Mirrors `Config::in_transit_timeout_minutes`. `None` = feature
+    /// disabled. `Some(n)` = auto-disable after n minutes of lid-closed,
+    /// on-battery, no-display, no-network. Defaults to `None` so older
+    /// clients see the safe "feature off" state.
+    #[serde(default)]
+    pub in_transit_timeout_minutes: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -135,10 +143,54 @@ mod tests {
             activate_at_launch: false,
             battery_threshold_pct: Some(20),
             prevent_display_sleep: true,
+            in_transit_timeout_minutes: Some(2),
         };
         let s = serde_json::to_string(&snap).unwrap();
         let back: Snapshot = serde_json::from_str(&s).unwrap();
         assert_eq!(snap, back);
+    }
+
+    #[test]
+    fn snapshot_back_compat_loads_without_in_transit_field() {
+        // Older menubar releases predate the in-transit field. A
+        // snapshot coming from such a server must deserialize cleanly
+        // (the field defaults to None = feature disabled). Otherwise
+        // mixing client versions during an upgrade window would break.
+        let json = serde_json::json!({
+            "preventing_sleep_now": false,
+            "enabled": false,
+            "modifiers": Modifiers::default(),
+            "lid": "open",
+            "power": {"type": "ac"},
+            "helper": "running",
+            "start_at_login": false,
+            "activate_at_launch": false,
+            "default_duration_minutes": null,
+            "battery_threshold_pct": null,
+        });
+        let snap: Snapshot = serde_json::from_value(json).unwrap();
+        assert!(
+            snap.in_transit_timeout_minutes.is_none(),
+            "missing in_transit_timeout_minutes must default to None (feature off)"
+        );
+    }
+
+    #[test]
+    fn set_preferences_in_transit_timeout_round_trips() {
+        // Three-state patch: None = leave alone, Some(None) = clear,
+        // Some(Some(n)) = set. Round-trip Some(Some(n)) to ensure the
+        // numeric payload survives the JSON layer.
+        let r = ControlRequest::SetPreferences {
+            start_at_login: None,
+            activate_at_launch: None,
+            battery_threshold_pct: None,
+            prevent_display_sleep: None,
+            schedule: None,
+            in_transit_timeout_minutes: Some(Some(2)),
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        let back: ControlRequest = serde_json::from_str(&s).unwrap();
+        assert_eq!(r, back);
     }
 
     #[test]
@@ -172,6 +224,7 @@ mod tests {
             battery_threshold_pct: None,
             prevent_display_sleep: None,
             schedule: Some(Some(sched)),
+            in_transit_timeout_minutes: None,
         };
         let s = serde_json::to_string(&r).unwrap();
         let back: ControlRequest = serde_json::from_str(&s).unwrap();
@@ -204,6 +257,7 @@ mod tests {
             battery_threshold_pct: None,
             prevent_display_sleep: None,
             schedule: Some(None),
+            in_transit_timeout_minutes: None,
         };
         let s = serde_json::to_string(&r).unwrap();
         let back: ControlRequest = serde_json::from_str(&s).unwrap();
