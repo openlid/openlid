@@ -29,6 +29,10 @@ pub struct PrefsPatch {
     pub battery_threshold_pct: Option<Option<u8>>,
     pub prevent_display_sleep: Option<bool>,
     pub schedule: Option<Option<Schedule>>,
+    /// In-transit auto-disable threshold (minutes). Three-state:
+    /// outer `None` = leave alone, `Some(None)` = clear (feature off),
+    /// `Some(Some(n))` = set to n.
+    pub in_transit_timeout_minutes: Option<Option<u32>>,
 }
 
 /// Notification fired whenever any state-affecting field changes. Listeners
@@ -65,6 +69,12 @@ where
     /// expiry thread captures the generation it was spawned for and refuses
     /// to fire if a newer generation has been written. See `arm_timer`.
     timer_generation: AtomicU64,
+    /// Generation counter for the in-transit auto-disable timer. Bumped
+    /// every time the network reachability flips (in either direction) so
+    /// an in-flight sleeper from a previous reachability window becomes a
+    /// no-op. Same pattern as `timer_generation` but for a separate
+    /// timer that the user-driven enable/disable path doesn't touch.
+    in_transit_generation: AtomicU64,
 }
 
 impl<P, L, S, D> StateRuntime<P, L, S, D>
@@ -97,6 +107,8 @@ where
             until: None, // timers are transient — never persisted
             lid: lid.current(),
             power: power_source.current(),
+            network_reachable: true, // optimistic; the monitor publishes the real value at startup
+            network_unreachable_since: None,
         };
 
         let rt = Arc::new(Self {
@@ -111,6 +123,7 @@ where
             config_path,
             listeners: Mutex::new(Vec::new()),
             timer_generation: AtomicU64::new(0),
+            in_transit_generation: AtomicU64::new(0),
         });
 
         let rt_for_lid = Arc::clone(&rt);
@@ -185,6 +198,95 @@ where
         });
     }
 
+    /// Network reachability flipped. Update state, arm or cancel the
+    /// in-transit timer accordingly, then notify listeners so any UI
+    /// (snapshot-driven indicators) refreshes.
+    ///
+    /// Called by the `MacNetworkMonitor` subscription wired up at
+    /// menubar startup. Tests drive this method directly.
+    pub fn on_network_change(self: &Arc<Self>, reachable: bool) {
+        let now = std::time::Instant::now();
+        let arm = {
+            let mut s = self.state.lock().unwrap();
+            s.network_reachable = reachable;
+            if reachable {
+                s.network_unreachable_since = None;
+                // Bump the generation so any in-flight sleeper from a
+                // previous unreachable window becomes a no-op.
+                self.in_transit_generation.fetch_add(1, Ordering::SeqCst);
+                false
+            } else if s.network_unreachable_since.is_none() {
+                s.network_unreachable_since = Some(now);
+                true
+            } else {
+                // Already in an unreachable window; an earlier call armed
+                // the timer. Don't double-arm.
+                false
+            }
+        };
+        if arm {
+            self.arm_in_transit_timer();
+        }
+        self.notify_listeners();
+    }
+
+    /// Spawn a one-shot thread that wakes after the configured
+    /// in-transit timeout. If, at fire time, all five guards still
+    /// hold, set `enabled = false` and persist.
+    ///
+    /// Same generation-counter pattern as `arm_timer`: a reachability
+    /// flip back to `true` bumps the generation and the in-flight
+    /// thread becomes a no-op.
+    fn arm_in_transit_timer(self: &Arc<Self>) {
+        let timeout_minutes = match self.config.lock().unwrap().in_transit_timeout_minutes {
+            Some(n) if n > 0 => n,
+            _ => return, // feature disabled or zero -- nothing to arm
+        };
+        let timeout = StdDuration::from_secs(u64::from(timeout_minutes) * 60);
+        let gen = self.in_transit_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let rt = Arc::clone(self);
+        std::thread::spawn(move || {
+            std::thread::sleep(timeout);
+            if rt.in_transit_generation.load(Ordering::SeqCst) != gen {
+                // Reachability flipped back during the wait window;
+                // a newer arm() superseded us (or cancelled).
+                return;
+            }
+            rt.maybe_fire_in_transit_auto_disable(timeout);
+        });
+    }
+
+    /// Read live state + the configured timeout and decide whether to
+    /// fire the in-transit auto-disable. Pure-decision-function call
+    /// happens here; on a `true` return we persist and reconcile.
+    fn maybe_fire_in_transit_auto_disable(self: &Arc<Self>, timeout: StdDuration) {
+        let should_fire = {
+            let s = self.state.lock().unwrap();
+            openlid_core::state::should_auto_disable_in_transit(
+                &s,
+                self.display.has_external_display(),
+                timeout,
+                std::time::Instant::now(),
+            )
+        };
+        if !should_fire {
+            return;
+        }
+        tracing::info!(
+            "in-transit auto-disable: lid closed, on battery, no external display, \
+             no network for {}s; turning off",
+            timeout.as_secs(),
+        );
+        {
+            let mut s = self.state.lock().unwrap();
+            s.enabled = false;
+            s.until = None;
+        }
+        // Best-effort persist; ignore errors so a transient disk issue
+        // doesn't prevent the safety deactivation from happening.
+        let _ = self.persist_and_reconcile_inner();
+    }
+
     /// Apply a preferences patch — atomic per-field update.
     pub fn set_preferences(self: &Arc<Self>, patch: PrefsPatch) -> Result<()> {
         // Capture the side-effect we may need to perform AFTER releasing the
@@ -216,6 +318,17 @@ where
                 // before persist_and_reconcile copies cfg.modifiers back out.
                 self.state.lock().unwrap().modifiers.schedule = v.clone();
                 cfg.modifiers.schedule = v;
+            }
+            if let Some(v) = patch.in_transit_timeout_minutes {
+                cfg.in_transit_timeout_minutes = v;
+                // If the user disables the detector while we're in an
+                // unreachable window, clear the timestamp so a future
+                // re-enable doesn't see stale data and fire prematurely.
+                if v.is_none() {
+                    self.state.lock().unwrap().network_unreachable_since = None;
+                    // Invalidate any in-flight sleeper too.
+                    self.in_transit_generation.fetch_add(1, Ordering::SeqCst);
+                }
             }
         }
 
@@ -257,6 +370,7 @@ where
             activate_at_launch: cfg.activate_at_launch,
             battery_threshold_pct: cfg.battery_threshold_pct,
             prevent_display_sleep: cfg.prevent_display_sleep,
+            in_transit_timeout_minutes: cfg.in_transit_timeout_minutes,
         }
     }
 
@@ -1089,6 +1203,140 @@ mod tests {
             disp.sleep_calls.load(Ordering::SeqCst),
             1,
             "force_display_sleep should fire on lid-close without external display"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // In-transit auto-disable: on_network_change bookkeeping +
+    // maybe_fire_in_transit_auto_disable predicate-driven fire.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn on_network_change_unreachable_sets_unreachable_since() {
+        // The Instant timestamp is what the duration check measures
+        // from. Without it the timer would never trip.
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        assert!(rt.state.lock().unwrap().network_unreachable_since.is_none());
+        rt.on_network_change(false);
+        assert!(rt.state.lock().unwrap().network_unreachable_since.is_some());
+        assert!(!rt.state.lock().unwrap().network_reachable);
+    }
+
+    #[test]
+    fn on_network_change_reachable_clears_unreachable_since() {
+        // Network came back -- cancel the in-flight timer (via the
+        // generation counter) and clear the timestamp so a future
+        // unreachable starts a fresh measurement.
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.on_network_change(false);
+        let gen_before = rt.in_transit_generation.load(Ordering::SeqCst);
+        rt.on_network_change(true);
+        assert!(rt.state.lock().unwrap().network_unreachable_since.is_none());
+        assert!(rt.state.lock().unwrap().network_reachable);
+        assert!(
+            rt.in_transit_generation.load(Ordering::SeqCst) > gen_before,
+            "reachable flip must bump the generation to invalidate in-flight sleepers"
+        );
+    }
+
+    #[test]
+    fn on_network_change_repeated_unreachable_does_not_reset_timestamp() {
+        // If we get two `false` callbacks in a row without an
+        // intervening `true`, the second must not re-arm or reset the
+        // timestamp (which would push the auto-disable out by another
+        // full window).
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.on_network_change(false);
+        let first = rt.state.lock().unwrap().network_unreachable_since;
+        std::thread::sleep(StdDuration::from_millis(5));
+        rt.on_network_change(false);
+        let second = rt.state.lock().unwrap().network_unreachable_since;
+        assert_eq!(
+            first, second,
+            "two unreachable callbacks in a row must keep the original timestamp"
+        );
+    }
+
+    #[test]
+    fn maybe_fire_in_transit_disables_when_all_guards_pass() {
+        // The integration path: arrange state so the pure predicate
+        // returns true, call the fire helper, observe enabled is now
+        // false and persisted.
+        let (rt, _power, _ps, disp, _dir) = fresh_runtime();
+        // Set the toggle on and put the world in the in-transit shape.
+        rt.set_enabled(true, None).unwrap();
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.lid = LidState::Closed;
+            s.power = PowerSource::Battery { percent: 50 };
+            s.network_reachable = false;
+            s.network_unreachable_since =
+                Some(std::time::Instant::now() - StdDuration::from_secs(300));
+        }
+        disp.external.store(false, Ordering::SeqCst);
+        rt.maybe_fire_in_transit_auto_disable(StdDuration::from_secs(120));
+        assert!(
+            !rt.state.lock().unwrap().enabled,
+            "should have auto-disabled"
+        );
+    }
+
+    #[test]
+    fn maybe_fire_in_transit_noop_when_external_display_attached() {
+        // Clamshell mode -- must not fire even if all other guards hold.
+        let (rt, _power, _ps, disp, _dir) = fresh_runtime();
+        rt.set_enabled(true, None).unwrap();
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.lid = LidState::Closed;
+            s.power = PowerSource::Battery { percent: 50 };
+            s.network_unreachable_since =
+                Some(std::time::Instant::now() - StdDuration::from_secs(300));
+        }
+        disp.external.store(true, Ordering::SeqCst);
+        rt.maybe_fire_in_transit_auto_disable(StdDuration::from_secs(120));
+        assert!(
+            rt.state.lock().unwrap().enabled,
+            "must not auto-disable in clamshell mode"
+        );
+    }
+
+    #[test]
+    fn maybe_fire_in_transit_noop_when_on_ac() {
+        // The on-battery guard is the strongest "in transit" signal --
+        // a plugged-in laptop with a network drop is at a desk, not
+        // in a backpack.
+        let (rt, _power, _ps, disp, _dir) = fresh_runtime();
+        rt.set_enabled(true, None).unwrap();
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.lid = LidState::Closed;
+            s.power = PowerSource::Ac;
+            s.network_unreachable_since =
+                Some(std::time::Instant::now() - StdDuration::from_secs(300));
+        }
+        disp.external.store(false, Ordering::SeqCst);
+        rt.maybe_fire_in_transit_auto_disable(StdDuration::from_secs(120));
+        assert!(rt.state.lock().unwrap().enabled, "must not fire on AC");
+    }
+
+    #[test]
+    fn maybe_fire_in_transit_noop_when_duration_under_threshold() {
+        // Sub-threshold: 30 s elapsed, 120 s required. Must not fire.
+        let (rt, _power, _ps, disp, _dir) = fresh_runtime();
+        rt.set_enabled(true, None).unwrap();
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.lid = LidState::Closed;
+            s.power = PowerSource::Battery { percent: 50 };
+            s.network_unreachable_since =
+                Some(std::time::Instant::now() - StdDuration::from_secs(30));
+        }
+        disp.external.store(false, Ordering::SeqCst);
+        rt.maybe_fire_in_transit_auto_disable(StdDuration::from_secs(120));
+        assert!(
+            rt.state.lock().unwrap().enabled,
+            "must not fire under threshold"
         );
     }
 }

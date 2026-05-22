@@ -253,6 +253,14 @@ when you run `openlid update` or click "Check for updates…" in the menu.
 All state stays on your machine in
 `~/Library/Application Support/io.openlid.app/`.
 
+If you opt in to the **Auto-disable in transit** preference, Open-Lid
+asks macOS's `SCNetworkReachability` framework whether the public
+Internet appears reachable — passively, by observing interface and
+routing state. No outbound traffic is generated on Open-Lid's behalf;
+the framework only reports what macOS already knows about the
+network. The feature is off by default and can be disabled at any
+time in Preferences.
+
 The privileged helper writes a small marker file at
 `/Library/Application Support/openlid/sleep-prevention.enabled` while sleep
 is overridden — this lets it recover gracefully if the helper restarts

@@ -68,6 +68,15 @@ pub struct Config {
     /// still takes effect.
     #[serde(default = "default_prevent_display_sleep")]
     pub prevent_display_sleep: bool,
+
+    /// Auto-disable openlid when the laptop appears to be in transit
+    /// (lid closed, on battery, no external display, no Internet
+    /// reachable for this many minutes). `None` disables the safeguard
+    /// entirely (default). Once auto-deactivated, the toggle stays off
+    /// until the user manually reactivates — matching the
+    /// `battery_threshold_pct` semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_transit_timeout_minutes: Option<u32>,
 }
 
 /// Default version assumed when a config on disk has no `version` field.
@@ -99,6 +108,7 @@ impl Default for Config {
             activate_at_launch: false,
             battery_threshold_pct: None,
             prevent_display_sleep: true,
+            in_transit_timeout_minutes: None,
         }
     }
 }
@@ -242,6 +252,7 @@ mod tests {
             activate_at_launch: false,
             battery_threshold_pct: Some(20),
             prevent_display_sleep: false,
+            in_transit_timeout_minutes: Some(5),
         };
         cfg.save(&p).unwrap();
         let back = Config::load(&p).unwrap();
@@ -262,6 +273,7 @@ mod tests {
             activate_at_launch: false,
             battery_threshold_pct: None,
             prevent_display_sleep: true,
+            in_transit_timeout_minutes: None,
         };
         v1_cfg.save(&v1).unwrap();
 
@@ -368,6 +380,23 @@ mod tests {
         assert!(!cfg.start_at_login);
         assert!(!cfg.activate_at_launch);
         assert!(cfg.battery_threshold_pct.is_none());
+        assert!(
+            cfg.in_transit_timeout_minutes.is_none(),
+            "in-transit detector must be opt-in; default install must not start probing reachability"
+        );
+    }
+
+    #[test]
+    fn config_missing_in_transit_timeout_loads_as_none() {
+        // Back-compat: a v1.x config that predates this field must
+        // deserialize cleanly with the in-transit detector disabled.
+        // Otherwise an upgrading user could land in a state where the
+        // detector tripped unexpectedly on their existing setup.
+        let dir = tempdir().unwrap();
+        let p = dir.path().join("config.toml");
+        std::fs::write(&p, "enabled = true\n").unwrap();
+        let cfg = Config::load(&p).unwrap();
+        assert!(cfg.in_transit_timeout_minutes.is_none());
     }
 
     #[test]
