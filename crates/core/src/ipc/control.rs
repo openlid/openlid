@@ -1,9 +1,28 @@
 //! Messages exchanged between the CLI role and the menubar role over a
 //! Unix domain socket. Line-delimited JSON: one request, one response, close.
 
-use crate::mode::{LidState, Modifiers, PowerSource};
+use crate::mode::{LidState, Modifiers, PowerSource, Schedule};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
+
+/// Custom deserializer that preserves the three-state semantics of a
+/// `Option<Option<T>>` field across JSON:
+///   * missing key  -> `None`       (leave alone)
+///   * `"key": null` -> `Some(None)` (clear)
+///   * `"key": value` -> `Some(Some(value))` (set)
+///
+/// Without this, serde's default `Option<T>` deserializer collapses any
+/// JSON `null` to the outer `None`, making "missing" and "null" indistinguishable
+/// on the wire. The `#[serde(default)]` attribute on the field handles the
+/// missing-key case; this function handles the present-but-null case.
+fn deserialize_double_option_schedule<'de, D>(
+    d: D,
+) -> Result<Option<Option<Schedule>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<Schedule>::deserialize(d).map(Some)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "cmd", rename_all = "kebab-case")]
@@ -19,6 +38,9 @@ pub enum ControlRequest {
     /// Update the persisted preferences from the preferences UI or the CLI
     /// `config edit` path. Fields are all optional — only `Some(_)` ones are
     /// applied; `None` leaves the existing value untouched.
+    ///
+    /// `schedule` uses an extra `Option` layer: outer `None` means "leave
+    /// alone", `Some(None)` means "clear", `Some(Some(s))` means "set to s".
     SetPreferences {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         start_at_login: Option<bool>,
@@ -30,6 +52,12 @@ pub enum ControlRequest {
         battery_threshold_pct: Option<Option<u8>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         prevent_display_sleep: Option<bool>,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_double_option_schedule"
+        )]
+        schedule: Option<Option<Schedule>>,
     },
     Ping,
 }
@@ -126,6 +154,64 @@ mod tests {
         let r = ControlRequest::SetEnabled {
             enabled: true,
             until: Some(until),
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        let back: ControlRequest = serde_json::from_str(&s).unwrap();
+        assert_eq!(r, back);
+    }
+
+    #[test]
+    fn set_preferences_with_schedule_round_trips() {
+        // Three-state field semantics: `Some(Some(s))` means "set to s".
+        // Without serde-default + skip-if-none on the field, this round-trip
+        // would lose `schedule` when no other prefs are being patched.
+        use crate::mode::{DaysOfWeek, Schedule};
+        use chrono::NaiveTime;
+        let sched = Schedule {
+            days: DaysOfWeek::MON | DaysOfWeek::FRI,
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        let r = ControlRequest::SetPreferences {
+            start_at_login: None,
+            activate_at_launch: None,
+            default_duration_minutes: None,
+            battery_threshold_pct: None,
+            prevent_display_sleep: None,
+            schedule: Some(Some(sched)),
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        let back: ControlRequest = serde_json::from_str(&s).unwrap();
+        assert_eq!(r, back);
+    }
+
+    #[test]
+    fn set_preferences_omitting_schedule_field_loads_as_none() {
+        // Back-compat: a client written against an older schema sends no
+        // `schedule` key. Deserialization must yield `schedule: None` (the
+        // "leave alone" branch), NOT fail or set to `Some(None)` (which
+        // would mean "clear the schedule").
+        let json = r#"{"cmd":"set-preferences"}"#;
+        let req: ControlRequest = serde_json::from_str(json).unwrap();
+        match req {
+            ControlRequest::SetPreferences { schedule, .. } => {
+                assert!(schedule.is_none(), "missing field must mean leave-alone");
+            }
+            other => panic!("expected SetPreferences, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_preferences_with_schedule_none_means_clear() {
+        // `Some(None)` vs missing-field distinction matters: the server uses
+        // it as the "clear the schedule" signal. Round-trip preserves it.
+        let r = ControlRequest::SetPreferences {
+            start_at_login: None,
+            activate_at_launch: None,
+            default_duration_minutes: None,
+            battery_threshold_pct: None,
+            prevent_display_sleep: None,
+            schedule: Some(None),
         };
         let s = serde_json::to_string(&r).unwrap();
         let back: ControlRequest = serde_json::from_str(&s).unwrap();

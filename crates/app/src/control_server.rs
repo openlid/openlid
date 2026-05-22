@@ -127,6 +127,8 @@ where
             default_duration_minutes,
             battery_threshold_pct,
             prevent_display_sleep,
+            // schedule wired through in the next commit
+            schedule: _,
         } => rt.set_preferences(PrefsPatch {
             start_at_login,
             activate_at_launch,
