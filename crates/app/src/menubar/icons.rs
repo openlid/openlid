@@ -27,18 +27,32 @@ const SCALE: f64 = ICON_SIZE / SVG_SIZE;
 /// 24pt canvas; scaling that proportionally to our 22pt canvas gives ~1.83pt.
 const STROKE_WIDTH: f64 = 1.8;
 
+/// Alpha used for the armed state. Template images use alpha as the tint mask,
+/// so stroking at 0.45 yields an icon the system renders at ~45% of its normal
+/// menu-bar tint — "ready but not currently engaged."
+const ARMED_ALPHA: f64 = 0.45;
+
+/// Which laptop glyph + tint to draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconState {
+    /// Toggle is off. `device-laptop-off` (slashed).
+    Off,
+    /// Toggle is on but a modifier (schedule window, battery threshold) is
+    /// currently gating it. Same glyph as `Active`, drawn dimmed.
+    Armed,
+    /// Toggle is on and sleep is actively held. `device-laptop` at full tint.
+    Active,
+}
+
 /// Build the laptop icon for the menu bar.
-///
-/// `enabled = true`  → Tabler `device-laptop`      (clean laptop silhouette)
-/// `enabled = false` → Tabler `device-laptop-off`  (laptop with diagonal slash)
-pub fn laptop_icon(enabled: bool) -> Retained<NSImage> {
+pub fn laptop_icon(state: IconState) -> Retained<NSImage> {
     let size = NSSize::new(ICON_SIZE, ICON_SIZE);
 
     // The drawing handler is invoked every time AppKit needs to rasterize the
     // image (initial render, theme change, scale change). It must be Fn (not
     // FnOnce) because of that.
     let block = RcBlock::new(move |_dst_rect: NSRect| -> Bool {
-        draw(enabled);
+        draw(state);
         Bool::YES
     });
 
@@ -48,21 +62,25 @@ pub fn laptop_icon(enabled: bool) -> Retained<NSImage> {
     NSImage::imageWithSize_flipped_drawingHandler(size, true, &block)
 }
 
-fn draw(enabled: bool) {
+fn draw(state: IconState) {
     // Template images discard color and use alpha as a mask. The system tints
-    // the result for the active menu-bar appearance. We still need to set a
-    // color before stroking; black is the convention.
-    NSColor::blackColor().set();
+    // the result for the active menu-bar appearance. Setting a sub-1 alpha on
+    // the stroke color produces a partially-transparent mask, which the system
+    // then tints proportionally — i.e. a dimmer icon.
+    let color = match state {
+        IconState::Armed => NSColor::blackColor().colorWithAlphaComponent(ARMED_ALPHA),
+        IconState::Off | IconState::Active => NSColor::blackColor(),
+    };
+    color.set();
 
     let path = NSBezierPath::bezierPath();
     path.setLineWidth(STROKE_WIDTH);
     path.setLineCapStyle(NSLineCapStyle::Round);
     path.setLineJoinStyle(NSLineJoinStyle::Round);
 
-    if enabled {
-        draw_laptop(&path);
-    } else {
-        draw_laptop_off(&path);
+    match state {
+        IconState::Off => draw_laptop_off(&path),
+        IconState::Active | IconState::Armed => draw_laptop(&path),
     }
 
     path.stroke();

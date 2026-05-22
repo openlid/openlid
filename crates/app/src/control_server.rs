@@ -124,15 +124,15 @@ where
         ControlRequest::SetPreferences {
             start_at_login,
             activate_at_launch,
-            default_duration_minutes,
             battery_threshold_pct,
             prevent_display_sleep,
+            schedule,
         } => rt.set_preferences(PrefsPatch {
             start_at_login,
             activate_at_launch,
-            default_duration_minutes,
             battery_threshold_pct,
             prevent_display_sleep,
+            schedule,
         }),
     };
     match result {

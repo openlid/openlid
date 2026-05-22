@@ -54,15 +54,16 @@ Open-Lid handles both:
   turns off (so the battery doesn't suffer and the laptop doesn't heat
   up). If an external display is attached, that one stays awake.
 
-Activate indefinitely or for a fixed duration. Auto-deactivate when the
-battery gets low.
+Activate indefinitely, or set a recurring schedule for the hours of the
+day you want sleep prevention active. Auto-deactivate when the battery
+gets low.
 
 ## Features
 
 - **One-click toggle** in the menu bar (left-click). Right-click for the
   full menu.
-- **Timed sessions** — Activate for 5 minutes, 30 minutes, 1 / 2 / 5
-  hours, or indefinitely.
+- **Recurring schedule** — keep sleep prevention active only during a
+  given window (e.g. 08:00–18:00 on weekdays). CLI + UI.
 - **Display stays awake while preventing sleep** — no idle dim, no
   screen lock. Implemented via Apple's documented `IOPMAssertion`
   API. Opt out in Preferences if you want the screen to lock on idle.
@@ -72,13 +73,12 @@ battery gets low.
   - Start at login
   - Activate at launch (or restore your last state)
   - Keep display awake while preventing sleep
-  - Default duration for single-click toggles
   - Auto-deactivate below a configurable battery percent
+  - Recurring active-hours schedule
 - **First-class CLI** for scripting:
   ```
   openlid on / off / status
-  openlid for 2h
-  openlid until 18:00
+  openlid schedule set --from 08:00 --to 18:00 --days Mon,Tue,Wed,Thu,Fri
   ```
 - **Single-instance** — running `open -a OpenLid` twice is a no-op.
 - **No telemetry. No data leaves your machine. Ever.**
@@ -135,19 +135,9 @@ Click the laptop icon in the menu bar to toggle on/off. Right-click (or
 option-click) to see the full menu:
 
 ```
-Status: Active until 18:30 · lid closed · AC
+Status: Active (indefinite) · lid closed · AC
 ─────────
 Turn Off
-─────────
-Activate for ▸
-   Indefinitely
-   5 minutes
-   10 minutes
-   15 minutes
-   30 minutes
-   1 hour
-   2 hours
-   5 hours
 ─────────
 Preferences…   ⌘,
 ─────────
@@ -158,11 +148,12 @@ Quit Open-Lid   ⌘Q
 
 | Command | What it does |
 |---|---|
-| `openlid on` | Activate using your Default duration preference |
+| `openlid on` | Activate indefinitely |
 | `openlid off` | Deactivate |
 | `openlid status` | Print current state. Use `--json` for machine-readable output. |
-| `openlid for <duration>` | Activate with a timer, e.g. `30m`, `2h`, `1h30m` |
-| `openlid until <time>` | Activate until `HH:MM` today (rolls over to tomorrow if past) |
+| `openlid schedule set --from HH:MM --to HH:MM [--days Mon,Tue,…]` | Set a recurring active-hours window. Implicitly turns the toggle on. |
+| `openlid schedule clear` | Remove the recurring window. |
+| `openlid schedule show [--json]` | Print the current schedule. |
 | `openlid config show / path / edit` | Inspect / edit config at `~/Library/Application Support/io.openlid.app/config.toml` |
 
 ### Preferences
@@ -178,11 +169,12 @@ Open the menu and click **Preferences…** (or ⌘,) to configure:
   and the screen doesn't lock on idle. Turn it off if you'd rather the
   screen lock on idle even while Open-Lid is on; system sleep prevention
   still works.
-- **Default duration** — what `openlid on` and a single menu-bar click
-  use. Defaults to *Indefinitely*.
 - **Turn off below battery %** — auto-deactivate when battery falls below
   the threshold. Does not auto-reactivate when battery recovers; the user
   decides when to re-arm.
+- **Active only during scheduled hours** — when on, sleep prevention is
+  gated to a recurring time window (e.g. 09:00–18:00 weekdays). Sleep is
+  allowed outside the window even when the toggle is on.
 
 ## How it works
 
@@ -212,12 +204,17 @@ enabled = false                       # last toggle state (persisted)
 start_at_login = false
 activate_at_launch = false
 prevent_display_sleep = true          # keep display awake on idle; false to allow screen lock
-default_duration_minutes = 30         # omit for Indefinite
 battery_threshold_pct = 20            # omit to disable battery auto-off
 
 [modifiers]                           # advanced / reserved for future UI
 only_on_ac = false
 min_battery = 20
+
+# Optional recurring active-hours window. Omit to disable.
+# [modifiers.schedule]
+# start = "08:00"
+# end = "18:00"
+# days = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 ```
 
 ## Privacy

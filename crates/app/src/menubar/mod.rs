@@ -16,11 +16,11 @@ use crate::platform::macos::{
 };
 use crate::state_runtime::{PrefsPatch, StateRuntime};
 use anyhow::Result;
-use chrono::{Duration, Local};
 use menu::MenuActions;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
 use openlid_core::config::Config;
+use openlid_core::mode::Schedule;
 use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
 use preferences::{PreferencesWindow, PrefsActions};
 use status_item::{StatusItemUI, UIShared};
@@ -289,16 +289,8 @@ where
 {
     fn toggle(&self) {
         let snap = self.runtime.snapshot();
-        let result = if snap.enabled {
-            // Currently on → turn off (clears any timer too).
-            self.runtime.set_enabled(false, None)
-        } else {
-            // Currently off → turn on, using default duration from prefs.
-            let until = snap
-                .default_duration_minutes
-                .map(|m| Local::now() + Duration::minutes(m as i64));
-            self.runtime.set_enabled(true, until)
-        };
+        // Indefinite in both directions — no timer.
+        let result = self.runtime.set_enabled(!snap.enabled, None);
         if let Err(e) = result {
             tracing::error!("toggle failed: {e:#}");
         }
@@ -312,14 +304,6 @@ where
         if let Some(ui) = self.ui.get() {
             ui.show_menu(mtm);
         }
-    }
-
-    fn activate_for_minutes(&self, minutes: Option<u32>) {
-        let until = minutes.map(|m| Local::now() + Duration::minutes(m as i64));
-        if let Err(e) = self.runtime.set_enabled(true, until) {
-            tracing::error!("activate_for_minutes({minutes:?}) failed: {e:#}");
-        }
-        self.refresh();
     }
 
     fn open_preferences(&self) {
@@ -398,17 +382,6 @@ where
         self.refresh();
     }
 
-    fn set_default_duration(&self, minutes: Option<u32>) {
-        let patch = PrefsPatch {
-            default_duration_minutes: Some(minutes),
-            ..Default::default()
-        };
-        if let Err(e) = self.runtime.set_preferences(patch) {
-            tracing::error!("set_default_duration failed: {e:#}");
-        }
-        self.refresh();
-    }
-
     fn set_battery_threshold(&self, pct: Option<u8>) {
         let patch = PrefsPatch {
             battery_threshold_pct: Some(pct),
@@ -427,6 +400,29 @@ where
         };
         if let Err(e) = self.runtime.set_preferences(patch) {
             tracing::error!("set_prevent_display_sleep failed: {e:#}");
+        }
+        self.refresh();
+    }
+
+    fn set_schedule(&self, schedule: Option<Schedule>) {
+        // Implicit-enable bridge: setting (Some) on an OFF toggle also turns
+        // it on, so the new gate has an enabled state to constrain. This
+        // mirrors the CLI behavior of `openlid schedule set`. Clearing
+        // (None) leaves `enabled` alone.
+        let was_setting = schedule.is_some();
+        let patch = PrefsPatch {
+            schedule: Some(schedule),
+            ..Default::default()
+        };
+        if let Err(e) = self.runtime.set_preferences(patch) {
+            tracing::error!("set_schedule failed: {e:#}");
+            self.refresh();
+            return;
+        }
+        if was_setting && !self.runtime.snapshot().enabled {
+            if let Err(e) = self.runtime.set_enabled(true, None) {
+                tracing::error!("set_schedule: implicit enable failed: {e:#}");
+            }
         }
         self.refresh();
     }

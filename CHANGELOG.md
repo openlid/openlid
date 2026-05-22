@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - TBD
+
+### Added
+
+- **Recurring schedule.** `[modifiers.schedule]` in `config.toml` and the
+  matching `openlid schedule set/clear/show` CLI subcommands gate sleep
+  prevention to a recurring time window (e.g. `09:00-18:00 Mon-Fri`).
+  The Preferences window grows a master "Active only during scheduled
+  hours" checkbox plus From/To fields and seven day-of-week checkboxes.
+  Outside the window, sleep is allowed even when the toggle is on.
+  Setting a schedule from CLI or UI implicitly turns the toggle on.
+
+### Removed
+
+- **`openlid for <duration>` and `openlid until <time>` removed.** Use
+  `openlid schedule set --from HH:MM --to HH:MM` for a recurring window
+  instead. One-off timed sessions are no longer supported.
+- **"Activate for" menubar submenu removed.** Same rationale — the
+  recurring schedule replaces ad-hoc timers.
+- **"Default duration" preference removed.** `openlid on` and a single
+  menubar click now always start an indefinite session.
+- **`default_duration_minutes` config field removed.** v2.0 configs that
+  carry this field load cleanly under v2.1 (serde ignores the unknown
+  field); the value is dropped on the next save.
+
+These surfaces were listed as stable in `docs/COMPATIBILITY.md` under
+v2.0. The project trimmed them in v2.1 rather than carrying them to
+v3.0; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the
+updated stable-surface list.
+
 ## [2.0.0] - 2026-05-15
 
 The rebrand release. The hyphenated `open-lid` name has been retired

@@ -8,7 +8,7 @@
 //! because every concrete touch happens from a main-thread callback (the
 //! menu click handlers in `MenuHandler`, and `mod::run` itself). If a future
 //! caller wires refresh from a background thread, it MUST hop to main first.
-use super::icons::laptop_icon;
+use super::icons::{laptop_icon, IconState};
 use super::menu::{build_menu, refresh_menu, BuiltMenu, MenuActions, MenuHandler};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
@@ -57,21 +57,20 @@ impl UIShared {
     /// Recompute the status item's button image and the menu's mutable items
     /// from the snapshot. Caller MUST be on the main thread.
     pub fn refresh(&self, snap: &Snapshot, mtm: MainThreadMarker) {
-        // The icon reflects the user's *intent* (the `enabled` toggle), not
-        // the moment-to-moment "actually preventing sleep right now" state.
-        // In mode `lid-closed` with the lid open, sleep isn't being prevented
-        // yet — but the toggle is armed and the icon should show that. The
-        // menu's status row separately shows the precise prevention state.
-        //
-        // Icons are programmatically drawn from Tabler's MIT-licensed SVGs:
-        //   - `device-laptop`     for ON
-        //   - `device-laptop-off` for OFF
-        let image = laptop_icon(snap.enabled);
+        // Three icon states drawn from Tabler's MIT-licensed SVGs:
+        //   - Off:    `device-laptop-off` (slashed)
+        //   - Armed:  `device-laptop` at 45% alpha — toggle is on but a
+        //             modifier (schedule window, battery cutoff) is gating
+        //             sleep prevention right now, so the icon dims to signal
+        //             "ready but not engaged."
+        //   - Active: `device-laptop` at full tint — sleep is actively held.
+        let state = icon_state_for(snap);
+        let image = laptop_icon(state);
         image.setTemplate(true);
-        let accessibility = NSString::from_str(if snap.enabled {
-            "Open-Lid: armed"
-        } else {
-            "Open-Lid: off"
+        let accessibility = NSString::from_str(match state {
+            IconState::Off => "OpenLid: off",
+            IconState::Armed => "OpenLid: armed",
+            IconState::Active => "OpenLid: active",
         });
         image.setAccessibilityDescription(Some(&accessibility));
 
@@ -82,6 +81,21 @@ impl UIShared {
         }
 
         refresh_menu(&self.menu, snap);
+    }
+}
+
+/// Map a runtime snapshot onto the menu-bar icon state.
+///
+/// * `Off`    — toggle is off.
+/// * `Active` — toggle is on AND sleep is actively held.
+/// * `Armed`  — toggle is on but a modifier (schedule window, battery
+///   threshold, lid state) is currently blocking. The user's intent is
+///   recorded but nothing is being held right now.
+fn icon_state_for(snap: &Snapshot) -> IconState {
+    match (snap.enabled, snap.preventing_sleep_now) {
+        (false, _) => IconState::Off,
+        (true, true) => IconState::Active,
+        (true, false) => IconState::Armed,
     }
 }
 

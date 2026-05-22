@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use openlid_core::config::Config;
 use openlid_core::ipc::control::Snapshot;
-use openlid_core::mode::{LidState, PowerSource};
+use openlid_core::mode::{LidState, PowerSource, Schedule};
 use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
 use openlid_core::state::{should_prevent_sleep, AppState};
 use std::path::PathBuf;
@@ -16,13 +16,19 @@ use std::time::Duration as StdDuration;
 
 /// Patch struct for updating preferences atomically. Each `Some(_)` replaces
 /// the corresponding field; `None` leaves it untouched.
+///
+/// `schedule` uses an extra `Option` layer: outer `None` means "leave alone",
+/// `Some(None)` means "clear", `Some(Some(s))` means "set to s". The
+/// `set_preferences` apply path mirrors the value into
+/// `state.modifiers.schedule` so `should_prevent_sleep` sees the gate without
+/// an extra reload.
 #[derive(Debug, Default, Clone)]
 pub struct PrefsPatch {
     pub start_at_login: Option<bool>,
     pub activate_at_launch: Option<bool>,
-    pub default_duration_minutes: Option<Option<u32>>,
     pub battery_threshold_pct: Option<Option<u8>>,
     pub prevent_display_sleep: Option<bool>,
+    pub schedule: Option<Option<Schedule>>,
 }
 
 /// Notification fired whenever any state-affecting field changes. Listeners
@@ -197,9 +203,6 @@ where
             if let Some(v) = patch.activate_at_launch {
                 cfg.activate_at_launch = v;
             }
-            if let Some(v) = patch.default_duration_minutes {
-                cfg.default_duration_minutes = v;
-            }
             if let Some(v) = patch.battery_threshold_pct {
                 cfg.battery_threshold_pct = v;
                 // Propagate to the modifier the decision function reads.
@@ -207,6 +210,12 @@ where
             }
             if let Some(v) = patch.prevent_display_sleep {
                 cfg.prevent_display_sleep = v;
+            }
+            if let Some(v) = patch.schedule {
+                // Propagate to the live modifiers (read by should_prevent_sleep)
+                // before persist_and_reconcile copies cfg.modifiers back out.
+                self.state.lock().unwrap().modifiers.schedule = v.clone();
+                cfg.modifiers.schedule = v;
             }
         }
 
@@ -246,7 +255,6 @@ where
             helper: openlid_core::ipc::control::HelperStatus::Running,
             start_at_login: cfg.start_at_login,
             activate_at_launch: cfg.activate_at_launch,
-            default_duration_minutes: cfg.default_duration_minutes,
             battery_threshold_pct: cfg.battery_threshold_pct,
             prevent_display_sleep: cfg.prevent_display_sleep,
         }
@@ -775,30 +783,7 @@ mod tests {
         let snap2 = rt.snapshot();
         assert_eq!(snap2.start_at_login, snap1.start_at_login);
         assert_eq!(snap2.activate_at_launch, snap1.activate_at_launch);
-        assert_eq!(
-            snap2.default_duration_minutes,
-            snap1.default_duration_minutes
-        );
         assert_eq!(snap2.battery_threshold_pct, snap1.battery_threshold_pct);
-    }
-
-    #[test]
-    fn prefs_patch_default_duration_can_be_cleared() {
-        // Outer Option<Option<u32>>: outer Some means "update", inner None
-        // means "clear the saved default".
-        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
-        rt.set_preferences(PrefsPatch {
-            default_duration_minutes: Some(Some(30)),
-            ..Default::default()
-        })
-        .unwrap();
-        assert_eq!(rt.snapshot().default_duration_minutes, Some(30));
-        rt.set_preferences(PrefsPatch {
-            default_duration_minutes: Some(None),
-            ..Default::default()
-        })
-        .unwrap();
-        assert!(rt.snapshot().default_duration_minutes.is_none());
     }
 
     #[test]
@@ -813,6 +798,93 @@ mod tests {
         .unwrap();
         let s = rt.state.lock().unwrap();
         assert_eq!(s.modifiers.min_battery, Some(40));
+    }
+
+    #[test]
+    fn prefs_patch_schedule_some_some_applies() {
+        // Applying Some(Some(schedule)) must (1) update the persisted modifier
+        // so the snapshot exposes it to clients, and (2) push it into
+        // state.modifiers.schedule so should_prevent_sleep sees the gate.
+        use chrono::NaiveTime;
+        use openlid_core::mode::{DaysOfWeek, Schedule};
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        rt.set_preferences(PrefsPatch {
+            schedule: Some(Some(sched.clone())),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            rt.state.lock().unwrap().modifiers.schedule.as_ref(),
+            Some(&sched),
+            "schedule must be reflected in live state.modifiers",
+        );
+        assert_eq!(
+            rt.snapshot().modifiers.schedule.as_ref(),
+            Some(&sched),
+            "schedule must be reflected in the snapshot served to clients",
+        );
+    }
+
+    #[test]
+    fn prefs_patch_schedule_some_none_clears() {
+        // Some(None) is the explicit "clear" signal. Setting then clearing
+        // must remove the schedule from the live state and the snapshot.
+        use chrono::NaiveTime;
+        use openlid_core::mode::{DaysOfWeek, Schedule};
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        rt.set_preferences(PrefsPatch {
+            schedule: Some(Some(Schedule {
+                days: DaysOfWeek::all(),
+                start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+                end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+            })),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(rt.state.lock().unwrap().modifiers.schedule.is_some());
+        rt.set_preferences(PrefsPatch {
+            schedule: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(rt.state.lock().unwrap().modifiers.schedule.is_none());
+        assert!(rt.snapshot().modifiers.schedule.is_none());
+    }
+
+    #[test]
+    fn prefs_patch_schedule_none_leaves_alone() {
+        // Outer None on the schedule field means "do not touch". A
+        // PrefsPatch::default() must not wipe a previously-set schedule.
+        // This is the round-trip that the menubar UI relies on: changing
+        // one preference shouldn't accidentally clear another.
+        use chrono::NaiveTime;
+        use openlid_core::mode::{DaysOfWeek, Schedule};
+        let (rt, _power, _ps, _disp, _dir) = fresh_runtime();
+        let sched = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        rt.set_preferences(PrefsPatch {
+            schedule: Some(Some(sched.clone())),
+            ..Default::default()
+        })
+        .unwrap();
+        rt.set_preferences(PrefsPatch {
+            start_at_login: Some(true),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            rt.state.lock().unwrap().modifiers.schedule.as_ref(),
+            Some(&sched),
+            "unrelated PrefsPatch must not clear the schedule",
+        );
     }
 
     #[test]
