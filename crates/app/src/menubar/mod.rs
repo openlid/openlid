@@ -22,7 +22,9 @@ use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::MainThreadMarker;
 use openlid_core::config::Config;
 use openlid_core::mode::Schedule;
-use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
+use openlid_core::platform::{
+    DisplayController, LidObserver, NetworkMonitor, PowerController, PowerSourceMonitor,
+};
 use preferences::{PreferencesWindow, PrefsActions};
 use status_item::{StatusItemUI, UIShared};
 use std::sync::{Arc, OnceLock};
@@ -59,11 +61,11 @@ pub fn run() -> Result<()> {
     let display = Arc::new(MacDisplayController::new());
     let client = Arc::new(HelperClient::new()?);
     let power = Arc::new(HelperPowerController::new(client.clone()));
-    // Reachability monitor. Held for app lifetime; subscription
-    // wiring lands when state_runtime gains the in-transit timer
-    // path. Best-effort: failure here just logs and continues with
-    // the detector effectively disabled.
-    let _network = match MacNetworkMonitor::start() {
+    // Reachability monitor. Held for app lifetime. Best-effort:
+    // failure here just logs and continues with the in-transit
+    // detector effectively disabled (the runtime never receives
+    // network-change callbacks).
+    let network = match MacNetworkMonitor::start() {
         Ok(m) => Some(Arc::new(m)),
         Err(e) => {
             tracing::warn!("network monitor failed to start: {e:#}");
@@ -76,6 +78,21 @@ pub fn run() -> Result<()> {
     // the v2 path so the user keeps their settings without manual work.
     let config_path = Config::migrate_v1_to_v2()?;
     let runtime = StateRuntime::new(power, lid, ps, display, config_path)?;
+
+    // Subscribe the runtime to network reachability changes. The
+    // callback fires on the SCNetworkReachability main-runloop
+    // delivery thread; `on_network_change` is internally synchronized
+    // via the state mutex. Publish the initial reachability reading
+    // immediately so the runtime starts with the actual state rather
+    // than the optimistic default.
+    if let Some(network) = network.as_ref() {
+        let initial = network.is_reachable();
+        runtime.on_network_change(initial);
+        let rt_for_net = Arc::clone(&runtime);
+        network.subscribe(Arc::new(move |reachable| {
+            rt_for_net.on_network_change(reachable);
+        }));
+    }
 
     // Spawn the control server (background thread).
     control_server::spawn(runtime.clone())?;
