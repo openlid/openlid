@@ -133,6 +133,13 @@ fn format_status_human(s: &Snapshot) -> String {
     if let Some(sched) = &s.modifiers.schedule {
         writeln!(out, "Schedule:         {}", format_schedule_inline(sched)).unwrap();
     }
+    if let Some(min) = s.in_transit_timeout_minutes {
+        writeln!(
+            out,
+            "Auto-off in transit: {min} min (lid closed, battery, no display, no network)"
+        )
+        .unwrap();
+    }
     out
 }
 
@@ -724,6 +731,28 @@ mod tests {
         s.battery_threshold_pct = Some(20);
         let out = format_status_human(&s);
         assert!(out.contains("Auto-off below:   20% battery"), "got: {out}");
+    }
+
+    #[test]
+    fn format_status_includes_in_transit_timeout_when_set() {
+        let mut s = snap();
+        s.in_transit_timeout_minutes = Some(2);
+        let out = format_status_human(&s);
+        assert!(out.contains("Auto-off in transit: 2 min"), "got: {out}");
+        // The predicate summary is informational but worth pinning so a
+        // future copy edit doesn't drop the "no network" clause and
+        // mislead users about what the safeguard actually monitors.
+        assert!(out.contains("no network"), "got: {out}");
+    }
+
+    #[test]
+    fn format_status_omits_in_transit_line_when_unset() {
+        // Default snapshot has the feature disabled. Guard against an
+        // always-print regression that would surface the line for every
+        // user, including those who never opted in.
+        let s = snap();
+        let out = format_status_human(&s);
+        assert!(!out.contains("Auto-off in transit"), "got: {out}");
     }
 
     #[test]

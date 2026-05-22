@@ -723,7 +723,9 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
             controls.in_transit_field.setEnabled(true);
         }
         None => {
-            controls.in_transit_checkbox.setState(NSControlStateValueOff);
+            controls
+                .in_transit_checkbox
+                .setState(NSControlStateValueOff);
             controls
                 .in_transit_field
                 .setIntegerValue(DEFAULT_IN_TRANSIT_MINUTES as isize);
