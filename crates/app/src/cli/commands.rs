@@ -292,12 +292,19 @@ fn schedule_set(from: &str, to: &str, days: Option<&str>) -> Result<()> {
         }
     }
 
-    println!(
-        "Schedule: {}{}",
-        format_schedule_inline(&sched),
-        if was_off { "; openlid is now ON" } else { "" }
-    );
+    println!("{}", format_schedule_set_confirmation(&sched, was_off));
     Ok(())
+}
+
+/// Human-readable confirmation printed after a successful `schedule set`.
+/// Pure so the implicit-enable bridge's user-visible contract can be
+/// regression-tested without standing up the IPC machinery.
+fn format_schedule_set_confirmation(sched: &Schedule, was_off: bool) -> String {
+    format!(
+        "Schedule: {}{}",
+        format_schedule_inline(sched),
+        if was_off { "; openlid is now ON" } else { "" }
+    )
 }
 
 fn schedule_clear() -> Result<()> {
@@ -327,15 +334,31 @@ fn schedule_show(json: bool) -> Result<()> {
         ControlResponse::Error { message } => return Err(anyhow!(message)),
         _ => return Err(anyhow!("unexpected response")),
     };
+    let sched = snap.modifiers.schedule.as_ref();
     if json {
-        println!("{}", serde_json::to_string_pretty(&snap.modifiers.schedule)?);
+        println!("{}", format_schedule_show_json(sched)?);
     } else {
-        match snap.modifiers.schedule.as_ref() {
-            Some(s) => println!("Schedule: {}", format_schedule_inline(s)),
-            None => println!("No schedule set."),
-        }
+        println!("{}", format_schedule_show_text(sched));
     }
     Ok(())
+}
+
+/// Human-readable rendering of `schedule show`. `None` reports the
+/// not-configured state explicitly rather than printing an empty line so
+/// the output is unambiguous in shell pipelines and screen-reader contexts.
+fn format_schedule_show_text(sched: Option<&Schedule>) -> String {
+    match sched {
+        Some(s) => format!("Schedule: {}", format_schedule_inline(s)),
+        None => "No schedule set.".to_string(),
+    }
+}
+
+/// JSON rendering of `schedule show --json`. Serializes the bare modifier
+/// value (or `null`), so the output is identical to
+/// `openlid status --json | jq .modifiers.schedule` -- a contract this
+/// test pins against accidental wrapping in some envelope.
+fn format_schedule_show_json(sched: Option<&Schedule>) -> Result<String> {
+    Ok(serde_json::to_string_pretty(&sched)?)
 }
 
 pub fn for_duration(s: &str) -> Result<()> {
@@ -696,6 +719,136 @@ mod tests {
         // snapshot must not include the Schedule line at all.
         let out = format_status_human(&snap());
         assert!(!out.contains("Schedule:"), "got: {out}");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // format_schedule_inline — direct coverage so a regression here surfaces
+    // independently of the larger format_status_human and confirmation
+    // wrappers.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_schedule_inline_renders_hhmm_with_day_summary() {
+        use chrono::NaiveTime;
+        use openlid_core::mode::{DaysOfWeek, Schedule};
+        let s = Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(8, 30, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(17, 45, 0).unwrap(),
+        };
+        assert_eq!(format_schedule_inline(&s), "08:30-17:45 (daily)");
+    }
+
+    #[test]
+    fn format_schedule_inline_uses_weekdays_summary_for_mon_fri() {
+        use chrono::NaiveTime;
+        use openlid_core::mode::{DaysOfWeek, Schedule};
+        let s = Schedule {
+            days: DaysOfWeek::MON
+                | DaysOfWeek::TUE
+                | DaysOfWeek::WED
+                | DaysOfWeek::THU
+                | DaysOfWeek::FRI,
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        };
+        assert_eq!(format_schedule_inline(&s), "09:00-18:00 (Mon-Fri)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // format_schedule_set_confirmation — the message printed after a
+    // successful `schedule set`. The "and openlid is now ON" suffix is the
+    // visible signal of the implicit-enable bridge, so a regression here
+    // would silently weaken the UX contract called out in the spec.
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn sample_schedule() -> Schedule {
+        use chrono::NaiveTime;
+        use openlid_core::mode::DaysOfWeek;
+        Schedule {
+            days: DaysOfWeek::all(),
+            start: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            end: NaiveTime::from_hms_opt(18, 0, 0).unwrap(),
+        }
+    }
+
+    #[test]
+    fn format_schedule_set_confirmation_when_was_off_appends_now_on_suffix() {
+        let out = format_schedule_set_confirmation(&sample_schedule(), true);
+        assert!(out.contains("09:00-18:00"), "got: {out}");
+        assert!(
+            out.contains("openlid is now ON"),
+            "expected the now-on suffix when toggle was off, got: {out}"
+        );
+    }
+
+    #[test]
+    fn format_schedule_set_confirmation_when_was_on_omits_now_on_suffix() {
+        // Toggle was already on -- don't lie to the user by claiming the
+        // command changed it.
+        let out = format_schedule_set_confirmation(&sample_schedule(), false);
+        assert!(out.contains("09:00-18:00"), "got: {out}");
+        assert!(
+            !out.contains("now ON"),
+            "must not advertise an enable that did not happen, got: {out}"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // format_schedule_show_text / _json — `schedule show` output formats.
+    // Both branches must round-trip cleanly through the parser they
+    // implicitly advertise: a `Schedule:` line a human reads, and a JSON
+    // value a shell pipeline can parse.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_schedule_show_text_some_prints_schedule_line() {
+        let out = format_schedule_show_text(Some(&sample_schedule()));
+        assert!(
+            out.starts_with("Schedule: "),
+            "human form must start with the Schedule prefix, got: {out}"
+        );
+        assert!(out.contains("09:00-18:00"), "got: {out}");
+    }
+
+    #[test]
+    fn format_schedule_show_text_none_prints_not_set() {
+        let out = format_schedule_show_text(None);
+        assert_eq!(out, "No schedule set.");
+    }
+
+    #[test]
+    fn format_schedule_show_json_some_serializes_to_object() {
+        // The JSON branch is what shell pipelines (`openlid schedule show
+        // --json | jq ...`) consume. The exact shape is governed by the
+        // serde derives on Schedule and DaysOfWeek, but a regression that
+        // accidentally serialized to something like an array string would
+        // break every downstream consumer.
+        let s = sample_schedule();
+        let out = format_schedule_show_json(Some(&s)).unwrap();
+        assert!(out.contains("\"start\""), "got: {out}");
+        assert!(out.contains("\"end\""), "got: {out}");
+        assert!(out.contains("\"days\""), "got: {out}");
+    }
+
+    #[test]
+    fn format_schedule_show_json_none_serializes_to_null() {
+        let out = format_schedule_show_json(None).unwrap();
+        assert_eq!(out.trim(), "null");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // parse_days_csv — `Mon,,Tue` edge case. The empty-token-skipping
+    // branch is a deliberate tolerance: humans paste with stray commas all
+    // the time, and treating that as the same as the no-comma case keeps
+    // the parser forgiving.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_days_csv_skips_empty_tokens_between_commas() {
+        use openlid_core::mode::DaysOfWeek;
+        let got = parse_days_csv("Mon,,Tue").unwrap();
+        assert_eq!(got, DaysOfWeek::MON | DaysOfWeek::TUE);
     }
 
     #[test]
