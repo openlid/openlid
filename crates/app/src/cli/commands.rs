@@ -102,7 +102,7 @@ pub fn status(json: bool) -> Result<()> {
                 println!("{}", serde_json::json!({"helper": "not-running"}));
                 Ok(())
             } else {
-                println!("Open-Lid is not running.");
+                println!("OpenLid is not running.");
                 std::process::exit(1);
             }
         }

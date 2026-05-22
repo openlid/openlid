@@ -339,7 +339,7 @@ impl PreferencesWindow {
                 false,
             )
         };
-        window.setTitle(ns_string!("Open-Lid Preferences"));
+        window.setTitle(ns_string!("OpenLid Preferences"));
         // SAFETY: by default a closed NSWindow is released by AppKit, which
         // would dangle our `Retained<NSWindow>`. We hold the strong ref and
         // expect to reuse the window on subsequent `show()` calls.
@@ -353,8 +353,8 @@ impl PreferencesWindow {
         //
         // Layout sketch (480 wide, 440 tall content):
         //   y=350: header text (multi-line, 70 tall)
-        //   y=320: "Start Open-Lid at login"
-        //   y=290: "Activate Open-Lid at launch"
+        //   y=320: "Start OpenLid at login"
+        //   y=290: "Activate OpenLid at launch"
         //   y=260: "Keep display awake while preventing sleep"
         //   y=210: "Turn off when battery is below" [field] %
         //   y=160: "Active only during scheduled hours" (master checkbox)
@@ -367,7 +367,7 @@ impl PreferencesWindow {
 
         // Header label — two-paragraph wrapping text.
         let header_text = ns_string!(
-            "Open-Lid is now running. You can find its icon in your menu bar.\n\nRight-click (or \u{2325}-click) the menu bar icon to show the Open-Lid menu."
+            "OpenLid is now running. You can find its icon in your menu bar.\n\nRight-click (or \u{2325}-click) the menu bar icon to show the OpenLid menu."
         );
         let header = NSTextField::wrappingLabelWithString(header_text, mtm);
         header.setFrame(NSRect::new(
@@ -381,7 +381,7 @@ impl PreferencesWindow {
         // documented to require main-thread execution; mtm proves we are.
         let start_at_login = unsafe {
             NSButton::checkboxWithTitle_target_action(
-                ns_string!("Start Open-Lid at login"),
+                ns_string!("Start OpenLid at login"),
                 Some(handler_obj),
                 Some(sel!(setStartAtLogin:)),
                 mtm,
@@ -396,7 +396,7 @@ impl PreferencesWindow {
         // Checkbox: Activate at launch.
         let activate_at_launch = unsafe {
             NSButton::checkboxWithTitle_target_action(
-                ns_string!("Activate Open-Lid at launch"),
+                ns_string!("Activate OpenLid at launch"),
                 Some(handler_obj),
                 Some(sel!(setActivateAtLaunch:)),
                 mtm,

@@ -13,7 +13,7 @@
 //! ─────────
 //! Preferences…    ⌘,                            [action: open_preferences]
 //! ─────────
-//! Quit Open-Lid    ⌘Q                           [action: quit]
+//! Quit OpenLid    ⌘Q                            [action: quit]
 //! ```
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, Sel};
@@ -35,7 +35,7 @@ pub trait MenuActions: Send + Sync {
     fn show_menu(&self);
     /// "Preferences…" — opens the prefs window.
     fn open_preferences(&self);
-    /// "Quit Open-Lid".
+    /// "Quit OpenLid".
     fn quit(&self);
 }
 
@@ -159,7 +159,7 @@ pub fn build_menu(mtm: MainThreadMarker, handler: &MenuHandler) -> BuiltMenu {
     menu.addItem(&NSMenuItem::separatorItem(mtm));
 
     // 4. Quit.
-    let quit_item = make_item(mtm, "Quit Open-Lid", Some(sel!(quit:)), handler_obj);
+    let quit_item = make_item(mtm, "Quit OpenLid", Some(sel!(quit:)), handler_obj);
     quit_item.setKeyEquivalent(ns_string!("q"));
     menu.addItem(&quit_item);
 
