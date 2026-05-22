@@ -253,44 +253,73 @@ pub fn schedule(arg: ScheduleArg) -> Result<()> {
     }
 }
 
+/// Reduce a `ControlResponse` to the embedded snapshot, mapping the
+/// `Error` and unexpected-variant branches to anyhow errors. Pure so the
+/// three response shapes can be exercised without standing up the IPC.
+fn extract_snapshot(resp: ControlResponse) -> Result<Snapshot> {
+    match resp {
+        ControlResponse::Ok { state } => Ok(state),
+        ControlResponse::Error { message } => Err(anyhow!(message)),
+        _ => Err(anyhow!("unexpected response")),
+    }
+}
+
+/// Assert a `ControlResponse` is `Ok` for callers that don't care about
+/// the embedded snapshot. Same error mapping as `extract_snapshot`.
+fn expect_ok(resp: ControlResponse) -> Result<()> {
+    match resp {
+        ControlResponse::Ok { .. } => Ok(()),
+        ControlResponse::Error { message } => Err(anyhow!(message)),
+        _ => Err(anyhow!("unexpected response")),
+    }
+}
+
+/// Build the IPC request that sets `modifiers.schedule = Some(s)` while
+/// leaving every other preference field untouched.
+fn build_set_schedule_request(sched: Schedule) -> ControlRequest {
+    ControlRequest::SetPreferences {
+        start_at_login: None,
+        activate_at_launch: None,
+        default_duration_minutes: None,
+        battery_threshold_pct: None,
+        prevent_display_sleep: None,
+        schedule: Some(Some(sched)),
+    }
+}
+
+/// Build the IPC request that clears the schedule. The `Some(None)` is
+/// the wire-level distinction from "leave alone" (`None`) -- see the
+/// custom deserializer on the request variant.
+fn build_clear_schedule_request() -> ControlRequest {
+    ControlRequest::SetPreferences {
+        start_at_login: None,
+        activate_at_launch: None,
+        default_duration_minutes: None,
+        battery_threshold_pct: None,
+        prevent_display_sleep: None,
+        schedule: Some(None),
+    }
+}
+
 fn schedule_set(from: &str, to: &str, days: Option<&str>) -> Result<()> {
     let sched = parse_schedule(from, to, days)?;
-
-    // (1) Persist the schedule and mirror into live modifiers.
-    let snapshot = match send_request(
-        ControlRequest::SetPreferences {
-            start_at_login: None,
-            activate_at_launch: None,
-            default_duration_minutes: None,
-            battery_threshold_pct: None,
-            prevent_display_sleep: None,
-            schedule: Some(Some(sched.clone())),
-        },
+    let snapshot = extract_snapshot(send_request(
+        build_set_schedule_request(sched.clone()),
         true,
-    )? {
-        ControlResponse::Ok { state } => state,
-        ControlResponse::Error { message } => return Err(anyhow!(message)),
-        _ => return Err(anyhow!("unexpected response")),
-    };
-
-    // (2) If the toggle was OFF, turn it on so the schedule has something
-    // to gate. See the design doc for the rationale (one-step UX matches
-    // the natural-language reading of "allow openlid to run from X to Y").
+    )?)?;
+    // Implicit-enable bridge: turn the toggle on if it was off, so the
+    // newly-persisted schedule has an enabled state to gate. See the
+    // design doc for the rationale.
     let was_off = !snapshot.enabled;
     if was_off {
-        match send_request(
+        expect_ok(send_request(
             ControlRequest::SetEnabled {
                 enabled: true,
                 until: None,
             },
             true,
-        )? {
-            ControlResponse::Ok { .. } => {}
-            ControlResponse::Error { message } => return Err(anyhow!(message)),
-            _ => return Err(anyhow!("unexpected response")),
-        }
+        )?)?;
     }
-
     println!("{}", format_schedule_set_confirmation(&sched, was_off));
     Ok(())
 }
@@ -307,32 +336,13 @@ fn format_schedule_set_confirmation(sched: &Schedule, was_off: bool) -> String {
 }
 
 fn schedule_clear() -> Result<()> {
-    match send_request(
-        ControlRequest::SetPreferences {
-            start_at_login: None,
-            activate_at_launch: None,
-            default_duration_minutes: None,
-            battery_threshold_pct: None,
-            prevent_display_sleep: None,
-            schedule: Some(None),
-        },
-        true,
-    )? {
-        ControlResponse::Ok { .. } => {
-            println!("Schedule cleared.");
-            Ok(())
-        }
-        ControlResponse::Error { message } => Err(anyhow!(message)),
-        _ => Err(anyhow!("unexpected response")),
-    }
+    expect_ok(send_request(build_clear_schedule_request(), true)?)?;
+    println!("Schedule cleared.");
+    Ok(())
 }
 
 fn schedule_show(json: bool) -> Result<()> {
-    let snap = match send_request(ControlRequest::GetStatus, true)? {
-        ControlResponse::Ok { state } => state,
-        ControlResponse::Error { message } => return Err(anyhow!(message)),
-        _ => return Err(anyhow!("unexpected response")),
-    };
+    let snap = extract_snapshot(send_request(ControlRequest::GetStatus, true)?)?;
     let sched = snap.modifiers.schedule.as_ref();
     if json {
         println!("{}", format_schedule_show_json(sched)?);
@@ -849,6 +859,125 @@ mod tests {
         use openlid_core::mode::DaysOfWeek;
         let got = parse_days_csv("Mon,,Tue").unwrap();
         assert_eq!(got, DaysOfWeek::MON | DaysOfWeek::TUE);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // extract_snapshot / expect_ok — three-arm response reducers. Pinning
+    // their behavior directly is the only way to test the schedule
+    // handlers' error paths without a live menubar peer.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn extract_snapshot_returns_state_from_ok() {
+        let resp = ControlResponse::Ok {
+            state: Snapshot {
+                enabled: true,
+                ..snap()
+            },
+        };
+        let got = extract_snapshot(resp).unwrap();
+        assert!(got.enabled);
+    }
+
+    #[test]
+    fn extract_snapshot_propagates_error_message() {
+        let resp = ControlResponse::Error {
+            message: "helper offline".to_string(),
+        };
+        let err = extract_snapshot(resp).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("helper offline"),
+            "error message must include the wire-level reason",
+        );
+    }
+
+    #[test]
+    fn extract_snapshot_rejects_unexpected_variant() {
+        // A `Pong` response to a request that asked for state is a
+        // wire-level protocol violation. Surface it as an error rather
+        // than silently substituting a default snapshot.
+        let resp = ControlResponse::Pong;
+        let err = extract_snapshot(resp).unwrap_err();
+        assert!(format!("{err:#}").contains("unexpected"));
+    }
+
+    #[test]
+    fn expect_ok_returns_unit_for_ok() {
+        let resp = ControlResponse::Ok { state: snap() };
+        expect_ok(resp).expect("Ok response must reduce to Ok(())");
+    }
+
+    #[test]
+    fn expect_ok_propagates_error_message() {
+        let resp = ControlResponse::Error {
+            message: "no permission".to_string(),
+        };
+        let err = expect_ok(resp).unwrap_err();
+        assert!(format!("{err:#}").contains("no permission"));
+    }
+
+    #[test]
+    fn expect_ok_rejects_unexpected_variant() {
+        let err = expect_ok(ControlResponse::Pong).unwrap_err();
+        assert!(format!("{err:#}").contains("unexpected"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // build_set_schedule_request / build_clear_schedule_request — the
+    // distinction between `Some(Some(s))` and `Some(None)` is the wire-
+    // level signal that distinguishes "set" from "clear". A regression
+    // that emitted `None` for clear would silently turn the command into
+    // a no-op.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn build_set_schedule_request_uses_some_some_schedule() {
+        let s = sample_schedule();
+        match build_set_schedule_request(s.clone()) {
+            ControlRequest::SetPreferences { schedule, .. } => {
+                assert_eq!(schedule, Some(Some(s)));
+            }
+            other => panic!("expected SetPreferences, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_set_schedule_request_leaves_other_prefs_untouched() {
+        // None on every other field means "don't change". A regression
+        // that defaulted, say, start_at_login to Some(false) would clobber
+        // user preferences every time someone set a schedule.
+        match build_set_schedule_request(sample_schedule()) {
+            ControlRequest::SetPreferences {
+                start_at_login,
+                activate_at_launch,
+                default_duration_minutes,
+                battery_threshold_pct,
+                prevent_display_sleep,
+                ..
+            } => {
+                assert!(start_at_login.is_none());
+                assert!(activate_at_launch.is_none());
+                assert!(default_duration_minutes.is_none());
+                assert!(battery_threshold_pct.is_none());
+                assert!(prevent_display_sleep.is_none());
+            }
+            other => panic!("expected SetPreferences, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_clear_schedule_request_uses_some_none_schedule() {
+        match build_clear_schedule_request() {
+            ControlRequest::SetPreferences { schedule, .. } => {
+                assert_eq!(
+                    schedule,
+                    Some(None),
+                    "clear must send Some(None) (the 'clear' signal), \
+                     not None (which means 'leave alone')",
+                );
+            }
+            other => panic!("expected SetPreferences, got {other:?}"),
+        }
     }
 
     #[test]
