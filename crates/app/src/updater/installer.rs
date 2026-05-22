@@ -93,6 +93,21 @@ pub fn render_installer_script(parent_pid: u32, dmg_path: &Path, app_path: &str)
         .replace("__APP_PATH__", app_path)
 }
 
+/// Pure path-builder for the installer script file. Lives under
+/// `tmp_dir` (typically `std::env::temp_dir()`); the PID-based name
+/// guards against concurrent updater invocations stepping on each
+/// other's scripts.
+pub fn installer_script_path(tmp_dir: &Path, parent_pid: u32) -> PathBuf {
+    tmp_dir.join(format!("openlid-installer-{parent_pid}.sh"))
+}
+
+/// Pure path-builder for the installer log file. Same layout as the
+/// script path; the user is pointed at this path when something goes
+/// wrong so they can attach it to a bug report.
+pub fn installer_log_path(tmp_dir: &Path, parent_pid: u32) -> PathBuf {
+    tmp_dir.join(format!("openlid-installer-{parent_pid}.log"))
+}
+
 /// Write the rendered installer to /tmp and spawn it detached. After
 /// this call returns, the parent process should exit promptly so the
 /// installer can proceed past its `kill -0` wait loop.
@@ -106,8 +121,9 @@ pub fn spawn_detached_installer(
     use std::os::unix::process::CommandExt;
 
     let script = render_installer_script(parent_pid, dmg_path, app_path);
-    let script_path = std::env::temp_dir().join(format!("openlid-installer-{parent_pid}.sh"));
-    let log_path = std::env::temp_dir().join(format!("openlid-installer-{parent_pid}.log"));
+    let tmp = std::env::temp_dir();
+    let script_path = installer_script_path(&tmp, parent_pid);
+    let log_path = installer_log_path(&tmp, parent_pid);
 
     {
         let mut f = std::fs::File::create(&script_path)
@@ -270,6 +286,29 @@ mod tests {
         assert!(!dir.exists());
         prepare_cache(&dir).unwrap();
         assert!(dir.exists() && dir.is_dir());
+    }
+
+    #[test]
+    fn installer_script_path_uses_parent_pid_for_uniqueness() {
+        // Two concurrent updater invocations must not collide on the
+        // same script path. The PID is the natural per-invocation ID.
+        let tmp = PathBuf::from("/tmp");
+        let a = installer_script_path(&tmp, 12345);
+        let b = installer_script_path(&tmp, 67890);
+        assert_ne!(a, b);
+        assert!(a.to_string_lossy().contains("12345"));
+        assert!(a.to_string_lossy().ends_with(".sh"));
+    }
+
+    #[test]
+    fn installer_log_path_pairs_with_script_path() {
+        // A user reading the log path printed at install time should
+        // be able to find the script next to it by swapping the
+        // extension. Pin that contract.
+        let tmp = PathBuf::from("/tmp");
+        let script = installer_script_path(&tmp, 42);
+        let log = installer_log_path(&tmp, 42);
+        assert_eq!(script.with_extension("log"), log);
     }
 
     #[test]

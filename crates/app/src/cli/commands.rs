@@ -440,16 +440,75 @@ fn confirm_install(prompt: &str) -> Result<bool> {
     std::io::stdout().flush()?;
     let mut line = String::new();
     std::io::stdin().read_line(&mut line)?;
-    let trimmed = line.trim().to_ascii_lowercase();
-    Ok(trimmed == "y" || trimmed == "yes")
+    Ok(parse_yes_no(&line))
 }
 
-pub fn update(arg: UpdateArg) -> Result<()> {
+/// Pure parser for the y/N prompt response. Accepts `y`, `yes`,
+/// case-insensitive; everything else is a "no". Trims whitespace so an
+/// accidental trailing space doesn't trigger an install.
+fn parse_yes_no(input: &str) -> bool {
+    let trimmed = input.trim().to_ascii_lowercase();
+    trimmed == "y" || trimmed == "yes"
+}
+
+/// Validate flag combinations. `--check` (which never installs) and
+/// `--yes` (non-interactive install) are mutually exclusive. Pure so
+/// the conflict message can be regression-tested.
+fn validate_update_flags(arg: &UpdateArg) -> Result<()> {
     if arg.check && arg.yes {
         return Err(anyhow!(
             "--check and --yes are mutually exclusive: --check never installs"
         ));
     }
+    Ok(())
+}
+
+/// What the dispatcher should do next, computed from the install
+/// method and the `--yes` flag. Pure -- the actual side-effects
+/// (printing, prompting, installing) happen at the caller; this
+/// function decides which branch to take.
+#[derive(Debug, PartialEq)]
+enum InstallAction {
+    /// Print the homebrew advice; nothing else.
+    HomebrewAdvise,
+    /// Refuse with the dev-build error.
+    DevRefuse(std::path::PathBuf),
+    /// Prompt the user, then install on confirm.
+    PromptThenInstall,
+    /// Skip the prompt and install immediately.
+    InstallNow,
+}
+
+fn decide_install_action(
+    method: &install_detect::InstallMethod,
+    non_interactive: bool,
+) -> InstallAction {
+    match method {
+        install_detect::InstallMethod::Homebrew => InstallAction::HomebrewAdvise,
+        install_detect::InstallMethod::Dev { path } => InstallAction::DevRefuse(path.clone()),
+        install_detect::InstallMethod::Manual if non_interactive => InstallAction::InstallNow,
+        install_detect::InstallMethod::Manual => InstallAction::PromptThenInstall,
+    }
+}
+
+/// Multi-line human message shown to Homebrew users. Pure so the
+/// command-string contract (the exact `brew upgrade openlid`) is
+/// pinned by a test.
+fn format_homebrew_update_advice() -> String {
+    "\nThis is a Homebrew install. To update, run:\n\n  brew upgrade openlid\n".to_string()
+}
+
+/// Error message returned for a dev build. Mentions the path so the
+/// user can spot which checkout they were running from.
+fn format_dev_refusal_message(path: &std::path::Path) -> String {
+    format!(
+        "you appear to be running a dev build at {}; rebuild from source instead",
+        path.display()
+    )
+}
+
+pub fn update(arg: UpdateArg) -> Result<()> {
+    validate_update_flags(&arg)?;
 
     let release = release::fetch_latest()?;
     let available = release::is_newer_than_current(&release.tag_name)?;
@@ -483,31 +542,23 @@ pub fn update(arg: UpdateArg) -> Result<()> {
         return Ok(());
     }
 
-    match method {
-        install_detect::InstallMethod::Homebrew => {
+    match decide_install_action(&method, arg.yes) {
+        InstallAction::HomebrewAdvise => {
             if !arg.json {
-                println!();
-                println!("This is a Homebrew install. To update, run:");
-                println!();
-                println!("  brew upgrade openlid");
-                println!();
+                print!("{}", format_homebrew_update_advice());
             }
             Ok(())
         }
-        install_detect::InstallMethod::Dev { path } => Err(anyhow!(
-            "you appear to be running a dev build at {}; rebuild from source instead",
-            path.display()
-        )),
-        install_detect::InstallMethod::Manual => {
-            if !arg.yes {
-                println!();
-                if !confirm_install("Download and install now?")? {
-                    println!("Aborted.");
-                    return Ok(());
-                }
+        InstallAction::DevRefuse(path) => Err(anyhow!(format_dev_refusal_message(&path))),
+        InstallAction::PromptThenInstall => {
+            println!();
+            if !confirm_install("Download and install now?")? {
+                println!("Aborted.");
+                return Ok(());
             }
             install_update(&release)
         }
+        InstallAction::InstallNow => install_update(&release),
     }
 }
 
@@ -1173,6 +1224,119 @@ mod tests {
         )
         .unwrap();
         assert!(out.contains("\"install_method\": \"homebrew\""));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // openlid update — flag validation, prompt parsing, install routing
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_yes_no_accepts_y_and_yes_case_insensitive() {
+        for s in ["y", "Y", "yes", "YES", "Yes", "  y  ", "\ty\n"] {
+            assert!(parse_yes_no(s), "expected yes for {s:?}");
+        }
+    }
+
+    #[test]
+    fn parse_yes_no_rejects_anything_else() {
+        for s in ["", "n", "no", "yep", "yeah", "1", "true", "ok"] {
+            assert!(!parse_yes_no(s), "expected no for {s:?}");
+        }
+    }
+
+    #[test]
+    fn validate_update_flags_accepts_check_alone() {
+        let arg = UpdateArg {
+            check: true,
+            yes: false,
+            json: false,
+        };
+        validate_update_flags(&arg).expect("check alone should be valid");
+    }
+
+    #[test]
+    fn validate_update_flags_accepts_yes_alone() {
+        let arg = UpdateArg {
+            check: false,
+            yes: true,
+            json: false,
+        };
+        validate_update_flags(&arg).expect("yes alone should be valid");
+    }
+
+    #[test]
+    fn validate_update_flags_rejects_check_and_yes_together() {
+        // --check never installs; --yes is non-interactive install. The
+        // combination is nonsensical and the error message must explain
+        // why so the user knows which flag to drop.
+        let arg = UpdateArg {
+            check: true,
+            yes: true,
+            json: false,
+        };
+        let err = validate_update_flags(&arg).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("--check") && msg.contains("--yes"));
+        assert!(msg.contains("never installs"));
+    }
+
+    #[test]
+    fn decide_install_action_homebrew_advises_regardless_of_yes() {
+        // Homebrew never auto-installs even with --yes; we never want to
+        // race with brew's own metadata.
+        let m = install_detect::InstallMethod::Homebrew;
+        assert_eq!(
+            decide_install_action(&m, false),
+            InstallAction::HomebrewAdvise
+        );
+        assert_eq!(
+            decide_install_action(&m, true),
+            InstallAction::HomebrewAdvise
+        );
+    }
+
+    #[test]
+    fn decide_install_action_dev_refuses_regardless_of_yes() {
+        let p = std::path::PathBuf::from("/tmp/dev/OpenLid.app");
+        let m = install_detect::InstallMethod::Dev { path: p.clone() };
+        assert_eq!(
+            decide_install_action(&m, false),
+            InstallAction::DevRefuse(p.clone())
+        );
+        assert_eq!(decide_install_action(&m, true), InstallAction::DevRefuse(p));
+    }
+
+    #[test]
+    fn decide_install_action_manual_branches_on_yes_flag() {
+        // The --yes flag's whole job is "skip the prompt". A regression
+        // that swapped these branches would either prompt under --yes
+        // (frustrating automation) or silently install without --yes
+        // (frustrating safety).
+        let m = install_detect::InstallMethod::Manual;
+        assert_eq!(
+            decide_install_action(&m, false),
+            InstallAction::PromptThenInstall
+        );
+        assert_eq!(decide_install_action(&m, true), InstallAction::InstallNow);
+    }
+
+    #[test]
+    fn format_homebrew_update_advice_pins_the_exact_command() {
+        // Pin the command string itself: a typo would send users to
+        // run something that doesn't exist (e.g. "brew update openlid"
+        // would target brew itself, not the cask).
+        let out = format_homebrew_update_advice();
+        assert!(out.contains("brew upgrade openlid"));
+        assert!(out.contains("Homebrew"));
+    }
+
+    #[test]
+    fn format_dev_refusal_message_includes_path() {
+        let path = std::path::PathBuf::from("/Users/dev/openlid/target/bundle/OpenLid.app");
+        let msg = format_dev_refusal_message(&path);
+        assert!(msg.contains("dev build"));
+        assert!(msg.contains(&path.display().to_string()));
+        assert!(msg.contains("rebuild from source"));
     }
 
     #[test]
