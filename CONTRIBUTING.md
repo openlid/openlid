@@ -67,12 +67,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the layered design.
 
 ### Likely to be declined
 
-- **Linux/Windows backend implementations before v1.0 ships.** The
-  `openlid-core` platform traits exist, but they'll get refined as the
-  macOS implementation matures toward v1.0. Backend contributions are
-  very welcome *after* v1.0 — please open an issue first describing
-  which OS, which APIs (logind/D-Bus, `SetThreadExecutionState`, etc.),
-  and what your testing setup looks like.
+- **Linux/Windows backend implementations without prior design discussion.**
+  Linux support is planned for v3.0.0, and Windows support depends on
+  user demand. Please open an issue first describing which OS, which APIs
+  (logind/D-Bus, `SetThreadExecutionState`, etc.), and what your testing
+  setup looks like.
 - **Adding the ability to commercially resell Open-Lid as a different product.**
   Apache 2.0 permits this legally, but you don't need to ask me; just do it
   with proper attribution per the license terms.

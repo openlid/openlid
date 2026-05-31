@@ -22,12 +22,12 @@ lock the screen and dim the display every time you check your phone.
 
 Built in Rust with a platform-abstraction layer in `openlid-core` so the
 state machine and CLI are OS-independent. The macOS implementation calls
-IOKit + AppKit + ServiceManagement; the Linux implementation (planned)
-will call logind via D-Bus.
+IOKit + AppKit + ServiceManagement; the Linux implementation planned for
+v3.0.0 will call logind via D-Bus.
 
 > [!NOTE]
-> **Status: v1.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
-> support planned for v1.x; Windows depending on demand.** Signed and
+> **Status: v2.1.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
+> support planned for v3.0.0; Windows depending on demand.** Signed and
 > notarized — no Gatekeeper warning. Helper installs automatically via
 > `SMAppService` — no `sudo` required. CLI subcommands, `config.toml`
 > schema, and IPC wire shapes are locked under semver — see
@@ -87,7 +87,7 @@ gets low.
 
 > [!IMPORTANT]
 > Installation today is macOS-only. Linux installation instructions
-> will land here once the Linux backend ships in v1.x. If you'd find
+> will land here once the Linux backend ships in v3.0.0. If you'd find
 > Open-Lid useful on Linux, please [open an issue](https://github.com/openlid/openlid/issues/new/choose)
 > describing your distro and use case — it helps prioritize.
 
@@ -320,12 +320,12 @@ prevented; only the display-idle assertion is dropped.
   surfaces under semver. Adds a `version` field to the config schema
   as a forward-compatibility hook for future v2.x. See
   [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
-- [ ] **v1.x — Linux support.** Linux backend talking to systemd-logind
+- [ ] **v3.0.0 — Linux support.** Linux backend talking to systemd-logind
   via D-Bus (`Inhibit("sleep:handle-lid-switch")`), wired into the
   existing `openlid-core` platform traits. UI shape TBD — either a
   GTK/Qt tray icon or a headless daemon driven by the CLI; tracked in
-  the v1.x design discussion.
-- [ ] **v2.x — Windows on demand.** Windows backend
+  the v3.0.0 design discussion.
+- [ ] **Future — Windows on demand.** Windows backend
   (`SetThreadExecutionState` + `WM_POWERBROADCAST`) ships if there's
   user demand. The `openlid-core` platform traits are already
   cross-platform-shaped, so this is a backend addition, not a rewrite.

@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.1.0] - TBD
+## [2.1.0] - 2026-05-31
+
+Open-Lid remains macOS-only in v2.1.0. Linux support is planned for
+v3.0.0, where the platform backend can ship without stretching the v2.x
+compatibility promise.
 
 ### Added
 
@@ -282,7 +286,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/openlid/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/openlid/openlid/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/openlid/openlid/releases/tag/v2.1.0
 [2.0.0]: https://github.com/openlid/openlid/releases/tag/v2.0.0
 [1.0.0]: https://github.com/openlid/openlid/releases/tag/v1.0.0
 [0.2.0]: https://github.com/openlid/openlid/releases/tag/v0.2.0

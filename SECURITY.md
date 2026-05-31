@@ -2,13 +2,12 @@
 
 ## Supported versions
 
-Open-Lid is currently pre-1.0. Only the latest released version is supported
-with security fixes. Once a 1.x line ships, this policy will be updated to
-specify a longer support window.
+Only the latest released Open-Lid version is supported with security fixes.
+Older releases are best-effort only.
 
 | Version    | Supported          |
 |------------|--------------------|
-| Latest 0.x | :white_check_mark: |
+| Latest     | :white_check_mark: |
 | Earlier    | :x:                |
 
 ## Threat model
