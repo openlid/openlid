@@ -1,8 +1,6 @@
 cask "openlid" do
   version "2.1.0"
-  # SHA placeholder; updated post-release once the v2.1.0 DMG is built and
-  # notarized. The release workflow + sync-cask-to-tap PR completes this.
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "547c8932c2bb199e853e57f8e753c3b7a20fa01c8e482b62aca8869d1b5097ad"
 
   url "https://github.com/openlid/openlid/releases/download/v#{version}/OpenLid-v#{version}.dmg",
       verified: "github.com/openlid/openlid/"
