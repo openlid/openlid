@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-06-02
+
+### Changed
+
+- **Preferences now render from the approved mock UI.** The macOS
+  preferences window keeps the native window shell but renders the settings
+  surface in a bundled WebView so the sidebar, safeguard cards, schedule
+  controls, spacing, and typography match the mockups.
+- **Preferences changes use a typed Rust/WebView bridge.** The WebView sends
+  typed JSON messages into Rust, and Rust continues to own persistence through
+  the existing `PrefsActions` pipeline.
+
 ## [2.2.0] - 2026-06-02
 
 ### Changed
@@ -302,7 +314,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/openlid/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/openlid/openlid/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/openlid/openlid/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/openlid/openlid/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/openlid/openlid/releases/tag/v2.1.0
 [2.0.0]: https://github.com/openlid/openlid/releases/tag/v2.0.0

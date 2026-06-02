@@ -26,7 +26,7 @@ IOKit + AppKit + ServiceManagement; the Linux implementation planned for
 v3.0.0 will call logind via D-Bus.
 
 > [!NOTE]
-> **Status: v2.2.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
+> **Status: v2.3.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
 > support planned for v3.0.0; Windows depending on demand.** Signed and
 > notarized — no Gatekeeper warning. Helper installs automatically via
 > `SMAppService` — no `sudo` required. CLI subcommands, `config.toml`
@@ -69,7 +69,7 @@ gets low.
   API. Opt out in Preferences if you want the screen to lock on idle.
 - **Display off when lid closes** — your battery and your thermal envelope
   thank you. Skipped automatically when an external display is connected.
-- **Native sidebar preferences window**:
+- **Mock-matched sidebar preferences window**:
   - **General** — start at login, activate at launch, keep display awake
   - **Safeguards** — auto-deactivate below a configurable battery percent
     or when OpenLid detects the laptop is in transit

@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenLid Preferences</title>
+  <style>
+    :root {
+      --window: #ffffff;
+      --sidebar: #f7f8fa;
+      --line: #d8dbe0;
+      --line-strong: #bdc1c8;
+      --text: #1d1d1f;
+      --muted: #68707a;
+      --blue: #0a84ff;
+      --blue-soft: #e8f2ff;
+      --green: #238b4d;
+      --green-soft: #e8f6ed;
+      --orange: #a85f16;
+      --orange-soft: #fff4e5;
+      color: var(--text);
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--window);
+    }
+
+    body {
+      font-size: 13px;
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .window {
+      display: grid;
+      grid-template-columns: 142px minmax(0, 1fr);
+      width: 100vw;
+      height: 100vh;
+      min-height: 590px;
+      background: var(--window);
+    }
+
+    .sidebar {
+      padding: 20px 10px;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+    }
+
+    .side-button {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: transparent;
+      color: var(--muted);
+      cursor: default;
+      text-align: left;
+      font-size: 13px;
+      font-weight: 640;
+    }
+
+    .side-button.active {
+      background: #e7eefb;
+      color: #174f9d;
+    }
+
+    .panels {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .panel {
+      display: none;
+      height: 100%;
+      padding: 24px 28px 22px;
+      overflow: auto;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .panel h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .panel-copy {
+      margin: 0 0 18px;
+      max-width: 520px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .section {
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .section:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .section-title {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      min-height: 38px;
+      padding: 7px 0;
+    }
+
+    .label {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .help {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .switch {
+      position: relative;
+      width: 42px;
+      height: 24px;
+      border: 0;
+      border-radius: 999px;
+      background: #c7cbd1;
+      cursor: default;
+      transition: background 140ms ease;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      transition: transform 140ms ease;
+    }
+
+    .switch.on {
+      background: var(--blue);
+    }
+
+    .switch.on::after {
+      transform: translateX(18px);
+    }
+
+    .card {
+      margin: 10px 0;
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fbfbfc;
+    }
+
+    .card.active {
+      border-color: rgba(10, 132, 255, 0.42);
+      background: #f3f8ff;
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .card p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .number {
+      display: inline-grid;
+      grid-template-columns: 26px 54px 26px;
+      overflow: hidden;
+      height: 30px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: #fff;
+    }
+
+    .number button {
+      border: 0;
+      background: #f2f3f5;
+      color: #3d4046;
+      cursor: default;
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .number input {
+      width: 54px;
+      border: 0;
+      border-inline: 1px solid var(--line);
+      color: var(--text);
+      text-align: center;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      outline: none;
+    }
+
+    .segmented {
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+      width: 210px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #eff0f2;
+      padding: 2px;
+    }
+
+    .segment {
+      border: 0;
+      border-radius: 6px;
+      padding: 6px 10px;
+      background: transparent;
+      color: var(--muted);
+      cursor: default;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .segment.active {
+      background: #fff;
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    .time-grid {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 12px 14px;
+      align-items: center;
+      margin-top: 14px;
+    }
+
+    .time-grid label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 640;
+    }
+
+    .time-parts {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+    }
+
+    select {
+      height: 30px;
+      min-width: 66px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 8px;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      outline: none;
+    }
+
+    select:focus,
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.14);
+    }
+
+    .period-select {
+      min-width: 76px;
+    }
+
+    .days {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .day {
+      min-width: 38px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      padding: 6px 8px;
+      background: var(--blue);
+      color: white;
+      cursor: default;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .day.off {
+      border-color: var(--line);
+      background: #eff0f2;
+      color: var(--muted);
+      font-weight: 620;
+    }
+
+    .summary-box {
+      margin-top: 16px;
+      border-radius: 10px;
+      padding: 12px;
+      background: var(--blue-soft);
+      color: #164f90;
+      font-size: 13px;
+      line-height: 1.38;
+    }
+
+    .summary-box strong {
+      display: block;
+      margin-bottom: 3px;
+      color: #103d73;
+    }
+  </style>
+</head>
+<body>
+  <main class="window" aria-label="OpenLid Preferences">
+    <nav class="sidebar" aria-label="Preference sections">
+      <button class="side-button active" type="button" data-panel-button="general">General</button>
+      <button class="side-button" type="button" data-panel-button="safeguards">Safeguards</button>
+      <button class="side-button" type="button" data-panel-button="schedule">Schedule</button>
+    </nav>
+    <div class="panels" id="panels"></div>
+  </main>
+
+  <script>
+    const panels = document.getElementById("panels");
+    const dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    const dayLabels = { mon: "Mo", tue: "Tu", wed: "We", thu: "Th", fri: "Fr", sat: "Sa", sun: "Su" };
+    let hydrating = false;
+
+    const state = {
+      panel: "general",
+      timeFormat: "24",
+      startAtLogin: true,
+      activateAtLaunch: true,
+      preventDisplaySleep: true,
+      batteryEnabled: false,
+      batteryPct: 20,
+      transitEnabled: false,
+      transitMinutes: 2,
+      scheduleEnabled: false,
+      startMinutes: 9 * 60,
+      endMinutes: 17 * 60,
+      days: [...dayOrder],
+    };
+
+    function post(message) {
+      if (hydrating) return;
+      window.webkit?.messageHandlers?.openlid?.postMessage(JSON.stringify(message));
+    }
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function clamp(value, min, max, fallback) {
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed)) return fallback;
+      return Math.min(max, Math.max(min, parsed));
+    }
+
+    function parseHhmm(value, fallbackHour, fallbackMinute) {
+      const parts = typeof value === "string" ? value.split(":") : [];
+      const hour = Number.parseInt(parts[0], 10);
+      const minute = Number.parseInt(parts[1], 10);
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+        return fallbackHour * 60 + fallbackMinute;
+      }
+      return clamp(hour, 0, 23, fallbackHour) * 60 + clamp(minute, 0, 59, fallbackMinute);
+    }
+
+    function format24(minutes) {
+      const hour = Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      return `${pad(hour)}:${pad(minute)}`;
+    }
+
+    function format12(minutes) {
+      const hour24 = Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      const period = hour24 >= 12 ? "PM" : "AM";
+      const hour12 = hour24 % 12 || 12;
+      return `${hour12}:${pad(minute)} ${period}`;
+    }
+
+    function displayTime(minutes) {
+      return state.timeFormat === "24" ? format24(minutes) : format12(minutes);
+    }
+
+    function hourOptions24(selected) {
+      return Array.from({ length: 24 }, (_, hour) => {
+        return `<option value="${hour}" ${hour === selected ? "selected" : ""}>${pad(hour)}</option>`;
+      }).join("");
+    }
+
+    function hourOptions12(selected) {
+      return Array.from({ length: 12 }, (_, index) => {
+        const hour = index + 1;
+        return `<option value="${hour}" ${hour === selected ? "selected" : ""}>${hour}</option>`;
+      }).join("");
+    }
+
+    function minuteOptions(selected) {
+      return Array.from({ length: 60 }, (_, minute) => {
+        return `<option value="${minute}" ${minute === selected ? "selected" : ""}>${pad(minute)}</option>`;
+      }).join("");
+    }
+
+    function setPanel(panel) {
+      state.panel = panel;
+      document.querySelectorAll("[data-panel-button]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.panelButton === panel);
+      });
+      render();
+    }
+
+    function setTimeFormat(format) {
+      state.timeFormat = format;
+      render();
+    }
+
+    function toggle(key) {
+      state[key] = !state[key];
+      emitSetting(key);
+      render();
+    }
+
+    function setNumber(key, value, min, max) {
+      state[key] = clamp(value, min, max, state[key]);
+      emitSetting(key);
+      render();
+    }
+
+    function stepNumber(key, delta, min, max) {
+      state[key] = clamp(state[key] + delta, min, max, state[key]);
+      emitSetting(key);
+      render();
+    }
+
+    function setTimePart(which, part, value) {
+      const current = which === "start" ? state.startMinutes : state.endMinutes;
+      let hour24 = Math.floor(current / 60);
+      let minute = current % 60;
+      const parsed = Number.parseInt(value, 10);
+
+      if (state.timeFormat === "24") {
+        if (part === "hour") hour24 = clamp(parsed, 0, 23, hour24);
+        if (part === "minute") minute = clamp(parsed, 0, 59, minute);
+      } else {
+        const currentPeriod = hour24 >= 12 ? "PM" : "AM";
+        let hour12 = hour24 % 12 || 12;
+        let period = currentPeriod;
+
+        if (part === "hour") hour12 = clamp(parsed, 1, 12, hour12);
+        if (part === "minute") minute = clamp(parsed, 0, 59, minute);
+        if (part === "period") period = value === "PM" ? "PM" : "AM";
+
+        hour24 = hour12 % 12;
+        if (period === "PM") hour24 += 12;
+      }
+
+      if (which === "start") {
+        state.startMinutes = hour24 * 60 + minute;
+      } else {
+        state.endMinutes = hour24 * 60 + minute;
+      }
+      emitSchedule();
+      render();
+    }
+
+    function toggleDay(day) {
+      if (state.days.includes(day)) {
+        state.days = state.days.filter((item) => item !== day);
+      } else {
+        state.days = dayOrder.filter((item) => item === day || state.days.includes(item));
+      }
+      if (state.days.length === 0) {
+        state.days = [...dayOrder];
+      }
+      emitSchedule();
+      render();
+    }
+
+    function emitSetting(key) {
+      if (key === "startAtLogin") {
+        post({ type: "start-at-login", enabled: state.startAtLogin });
+      } else if (key === "activateAtLaunch") {
+        post({ type: "activate-at-launch", enabled: state.activateAtLaunch });
+      } else if (key === "preventDisplaySleep") {
+        post({ type: "prevent-display-sleep", enabled: state.preventDisplaySleep });
+      } else if (key === "batteryEnabled" || key === "batteryPct") {
+        post({ type: "battery-threshold", enabled: state.batteryEnabled, value: state.batteryPct });
+      } else if (key === "transitEnabled" || key === "transitMinutes") {
+        post({ type: "in-transit-timeout", enabled: state.transitEnabled, value: state.transitMinutes });
+      } else if (key === "scheduleEnabled") {
+        emitSchedule();
+      }
+    }
+
+    function emitSchedule() {
+      post({
+        type: "schedule",
+        enabled: state.scheduleEnabled,
+        start: format24(state.startMinutes),
+        end: format24(state.endMinutes),
+        days: state.days,
+      });
+    }
+
+    function switchButton(key) {
+      return `<button class="switch ${state[key] ? "on" : ""}" type="button" aria-pressed="${state[key]}" onclick="toggle('${key}')"></button>`;
+    }
+
+    function numberControl(key, min, max) {
+      return `
+        <span class="number">
+          <button type="button" onclick="stepNumber('${key}', -1, ${min}, ${max})">-</button>
+          <input value="${state[key]}" inputmode="numeric" onchange="setNumber('${key}', this.value, ${min}, ${max})">
+          <button type="button" onclick="stepNumber('${key}', 1, ${min}, ${max})">+</button>
+        </span>
+      `;
+    }
+
+    function timePicker(which, minutes) {
+      const hour24 = Math.floor(minutes / 60);
+      const minute = minutes % 60;
+      if (state.timeFormat === "24") {
+        return `
+          <div class="time-parts">
+            <select aria-label="${which} hour" onchange="setTimePart('${which}', 'hour', this.value)">${hourOptions24(hour24)}</select>
+            <span>:</span>
+            <select aria-label="${which} minute" onchange="setTimePart('${which}', 'minute', this.value)">${minuteOptions(minute)}</select>
+          </div>
+        `;
+      }
+
+      const period = hour24 >= 12 ? "PM" : "AM";
+      const hour12 = hour24 % 12 || 12;
+      return `
+        <div class="time-parts">
+          <select aria-label="${which} hour" onchange="setTimePart('${which}', 'hour', this.value)">${hourOptions12(hour12)}</select>
+          <span>:</span>
+          <select aria-label="${which} minute" onchange="setTimePart('${which}', 'minute', this.value)">${minuteOptions(minute)}</select>
+          <select class="period-select" aria-label="${which} period" onchange="setTimePart('${which}', 'period', this.value)">
+            <option value="AM" ${period === "AM" ? "selected" : ""}>AM</option>
+            <option value="PM" ${period === "PM" ? "selected" : ""}>PM</option>
+          </select>
+        </div>
+      `;
+    }
+
+    function dayButtons() {
+      return `
+        <div class="days">
+          ${dayOrder.map((day) => `
+            <button class="day ${state.days.includes(day) ? "" : "off"}" type="button" onclick="toggleDay('${day}')">${dayLabels[day]}</button>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function generalPanel() {
+      return `
+        <section class="panel active">
+          <h2>General</h2>
+          <p class="panel-copy">Core startup and display behavior.</p>
+          <div class="section">
+            <p class="section-title">Launch</p>
+            <div class="row">
+              <div><div class="label">Start OpenLid at login</div><div class="help">Open automatically when you sign in.</div></div>
+              ${switchButton("startAtLogin")}
+            </div>
+            <div class="row">
+              <div><div class="label">Activate at launch</div><div class="help">Turn sleep prevention on whenever OpenLid starts.</div></div>
+              ${switchButton("activateAtLaunch")}
+            </div>
+          </div>
+          <div class="section">
+            <p class="section-title">Display</p>
+            <div class="row">
+              <div><div class="label">Keep display awake</div><div class="help">Avoid idle dimming and screen lock while OpenLid is active.</div></div>
+              ${switchButton("preventDisplaySleep")}
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function safeguardsPanel() {
+      return `
+        <section class="panel active">
+          <h2>Safeguards</h2>
+          <p class="panel-copy">Automatic turn-off rules for low battery and travel scenarios.</p>
+          <div class="card ${state.batteryEnabled ? "active" : ""}">
+            <div class="row">
+              <div><h3>Low battery</h3><p>Turn OpenLid off before battery drain becomes risky.</p></div>
+              ${switchButton("batteryEnabled")}
+            </div>
+            <div class="controls ${state.batteryEnabled ? "" : "disabled"}"><span>Turn off below</span>${numberControl("batteryPct", 1, 100)}<span>%</span></div>
+          </div>
+          <div class="card ${state.transitEnabled ? "active" : ""}">
+            <div class="row">
+              <div><h3>In transit</h3><p>Disarm if the laptop is likely packed away: lid closed, on battery, no display, no network.</p></div>
+              ${switchButton("transitEnabled")}
+            </div>
+            <div class="controls ${state.transitEnabled ? "" : "disabled"}"><span>After</span>${numberControl("transitMinutes", 1, 120)}<span>minutes with no network</span></div>
+          </div>
+        </section>
+      `;
+    }
+
+    function schedulePanel() {
+      return `
+        <section class="panel active">
+          <h2>Schedule</h2>
+          <p class="panel-copy">Constrain OpenLid to recurring active hours. Changes save automatically as you edit.</p>
+          <div class="section">
+            <div class="row">
+              <div><div class="label">Active only during scheduled hours</div><div class="help">Outside this window, OpenLid allows normal sleep.</div></div>
+              ${switchButton("scheduleEnabled")}
+            </div>
+          </div>
+          <div class="section ${state.scheduleEnabled ? "" : "disabled"}">
+            <p class="section-title">Time format</p>
+            <div class="segmented" role="group" aria-label="Time format">
+              <button class="segment ${state.timeFormat === "24" ? "active" : ""}" type="button" onclick="setTimeFormat('24')">24-hour</button>
+              <button class="segment ${state.timeFormat === "12" ? "active" : ""}" type="button" onclick="setTimeFormat('12')">AM/PM</button>
+            </div>
+          </div>
+          <div class="section ${state.scheduleEnabled ? "" : "disabled"}">
+            <p class="section-title">Active window</p>
+            <div class="time-grid">
+              <label>From</label>
+              ${timePicker("start", state.startMinutes)}
+              <label>To</label>
+              ${timePicker("end", state.endMinutes)}
+            </div>
+            <div class="summary-box">
+              <strong>Current schedule</strong>
+              ${displayTime(state.startMinutes)} to ${displayTime(state.endMinutes)} on ${state.days.map((day) => dayLabels[day]).join(", ")}
+            </div>
+          </div>
+          <div class="section ${state.scheduleEnabled ? "" : "disabled"}">
+            <p class="section-title">Days</p>
+            ${dayButtons()}
+          </div>
+        </section>
+      `;
+    }
+
+    function render() {
+      panels.innerHTML =
+        state.panel === "safeguards" ? safeguardsPanel() :
+        state.panel === "schedule" ? schedulePanel() :
+        generalPanel();
+    }
+
+    function applySnapshot(snapshot) {
+      hydrating = true;
+      state.startAtLogin = Boolean(snapshot.startAtLogin);
+      state.activateAtLaunch = Boolean(snapshot.activateAtLaunch);
+      state.preventDisplaySleep = Boolean(snapshot.preventDisplaySleep);
+      state.batteryEnabled = Boolean(snapshot.batteryThreshold?.enabled);
+      state.batteryPct = clamp(snapshot.batteryThreshold?.value, 1, 100, 20);
+      state.transitEnabled = Boolean(snapshot.inTransitTimeout?.enabled);
+      state.transitMinutes = clamp(snapshot.inTransitTimeout?.value, 1, 120, 2);
+      state.scheduleEnabled = Boolean(snapshot.schedule?.enabled);
+      state.startMinutes = parseHhmm(snapshot.schedule?.start, 9, 0);
+      state.endMinutes = parseHhmm(snapshot.schedule?.end, 17, 0);
+      const days = Array.isArray(snapshot.schedule?.days) ? snapshot.schedule.days : dayOrder;
+      state.days = dayOrder.filter((day) => days.includes(day));
+      if (state.days.length === 0) {
+        state.days = [...dayOrder];
+      }
+      render();
+      hydrating = false;
+    }
+
+    document.querySelectorAll("[data-panel-button]").forEach((button) => {
+      button.addEventListener("click", () => setPanel(button.dataset.panelButton));
+    });
+
+    render();
+    window.OpenLidPreferences = { applySnapshot };
+    window.addEventListener("DOMContentLoaded", () => post({ type: "ready" }));
+    post({ type: "ready" });
+  </script>
+</body>
+</html>
