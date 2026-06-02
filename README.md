@@ -26,7 +26,7 @@ IOKit + AppKit + ServiceManagement; the Linux implementation planned for
 v3.0.0 will call logind via D-Bus.
 
 > [!NOTE]
-> **Status: v2.1.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
+> **Status: v2.2.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
 > support planned for v3.0.0; Windows depending on demand.** Signed and
 > notarized — no Gatekeeper warning. Helper installs automatically via
 > `SMAppService` — no `sudo` required. CLI subcommands, `config.toml`
@@ -69,12 +69,12 @@ gets low.
   API. Opt out in Preferences if you want the screen to lock on idle.
 - **Display off when lid closes** — your battery and your thermal envelope
   thank you. Skipped automatically when an external display is connected.
-- **Native preferences window**:
-  - Start at login
-  - Activate at launch (or restore your last state)
-  - Keep display awake while preventing sleep
-  - Auto-deactivate below a configurable battery percent
-  - Recurring active-hours schedule
+- **Native sidebar preferences window**:
+  - **General** — start at login, activate at launch, keep display awake
+  - **Safeguards** — auto-deactivate below a configurable battery percent
+    or when OpenLid detects the laptop is in transit
+  - **Schedule** — recurring active-hours schedule with 24-hour or AM/PM
+    time picking
 - **First-class CLI** for scripting:
   ```
   openlid on / off / status
@@ -158,7 +158,16 @@ Quit Open-Lid   ⌘Q
 
 ### Preferences
 
-Open the menu and click **Preferences…** (or ⌘,) to configure:
+Open the menu and click **Preferences…** (or ⌘,) to configure the native
+sidebar settings window:
+
+| Section | Settings |
+|---|---|
+| **General** | Start Open-Lid at login; activate Open-Lid at launch; keep display awake while preventing sleep. |
+| **Safeguards** | Turn off below a battery percent; auto-disable in transit after a configurable number of minutes. |
+| **Schedule** | Enable recurring active hours; choose 24-hour or AM/PM time entry; set From/To hour and minute dropdowns; choose active days. |
+
+Details:
 
 - **Start Open-Lid at login** — auto-launches via `SMAppService.mainApp()`.
 - **Activate Open-Lid at launch** — when on, every launch starts armed.
@@ -172,9 +181,13 @@ Open the menu and click **Preferences…** (or ⌘,) to configure:
 - **Turn off below battery %** — auto-deactivate when battery falls below
   the threshold. Does not auto-reactivate when battery recovers; the user
   decides when to re-arm.
+- **Auto-disable in transit** — auto-deactivate after the laptop appears
+  to be packed away: lid closed, on battery, no external display, and no
+  network for the configured number of minutes.
 - **Active only during scheduled hours** — when on, sleep prevention is
   gated to a recurring time window (e.g. 09:00–18:00 weekdays). Sleep is
-  allowed outside the window even when the toggle is on.
+  allowed outside the window even when the toggle is on. The UI supports
+  both 24-hour and AM/PM time picking.
 
 ## How it works
 
@@ -205,6 +218,7 @@ start_at_login = false
 activate_at_launch = false
 prevent_display_sleep = true          # keep display awake on idle; false to allow screen lock
 battery_threshold_pct = 20            # omit to disable battery auto-off
+in_transit_timeout_minutes = 2        # omit to disable in-transit auto-off
 
 [modifiers]                           # advanced / reserved for future UI
 only_on_ac = false

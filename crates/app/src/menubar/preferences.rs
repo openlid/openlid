@@ -1,11 +1,10 @@
 //! Native macOS Preferences window.
 //!
-//! A single `NSWindow` with start-at-login, activate-at-launch, keep-display-
-//! awake, a battery-threshold checkbox + numeric field, and a recurring-
-//! schedule section. Each control routes through one selector on `PrefsHandler`
-//! which calls into a `PrefsActions` trait object. The outer `RuntimeActions`
-//! impl translates each call into a single-field `PrefsPatch` and dispatches
-//! it through `StateRuntime::set_preferences`.
+//! A single `NSWindow` with sidebar panels for general settings, safeguards,
+//! and recurring schedules. Each control routes through one selector on
+//! `PrefsHandler` which calls into a `PrefsActions` trait object. The outer
+//! `RuntimeActions` impl translates each call into a single-field `PrefsPatch`
+//! and dispatches it through `StateRuntime::set_preferences`.
 //!
 //! Threading: all construction and all callbacks happen on the main thread —
 //! the menu click that opens the window, the AppKit action invocations after
@@ -15,19 +14,21 @@
 //!
 //! Window lifecycle: the window object is constructed lazily on first
 //! `show()`, then kept alive for the life of the app. Closing the window
-//! (red button or our "Close" button) just hides it; the next `show()` brings
-//! it back. Subsequent shows refresh the controls from the latest snapshot.
+//! (red button) just hides it; the next `show()` brings it back. Subsequent
+//! shows refresh the controls from the latest snapshot.
 
 use chrono::NaiveTime;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
+use objc2::runtime::{AnyObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSBackingStoreType, NSButton, NSControlStateValueOff, NSControlStateValueOn, NSTextField,
+    NSBackingStoreType, NSButton, NSControlStateValueOff, NSControlStateValueOn, NSMenu,
+    NSPopUpButton, NSSegmentSwitchTracking, NSSegmentedControl, NSStepper, NSTextField, NSView,
     NSWindow, NSWindowStyleMask,
 };
 use objc2_foundation::{
-    ns_string, MainThreadMarker, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    ns_string, MainThreadMarker, NSArray, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
+    NSString,
 };
 use openlid_core::ipc::control::Snapshot;
 use openlid_core::mode::{DaysOfWeek, Schedule};
@@ -62,9 +63,92 @@ const DEFAULT_BATTERY_PCT: u8 = 20;
 /// long enough to ride out elevator-Wi-Fi blips.
 const DEFAULT_IN_TRANSIT_MINUTES: u32 = 2;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TimeFormat {
+    TwentyFour,
+    AmPm,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TimeParts {
+    /// Selected hour index in the active popup:
+    /// * 24-hour mode: 0..=23 maps directly to the hour.
+    /// * AM/PM mode: 0..=11 maps to labels 1..=12.
+    hour_index: isize,
+    minute_index: isize,
+    /// `None` in 24-hour mode; `Some(0)` for AM and `Some(1)` for PM.
+    period_index: Option<isize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrefsPanel {
+    General,
+    Safeguards,
+    Schedule,
+}
+
+fn time_parts_for(time: NaiveTime, format: TimeFormat) -> TimeParts {
+    use chrono::Timelike;
+
+    let hour = time.hour() as isize;
+    let minute = time.minute() as isize;
+    match format {
+        TimeFormat::TwentyFour => TimeParts {
+            hour_index: hour,
+            minute_index: minute,
+            period_index: None,
+        },
+        TimeFormat::AmPm => {
+            let hour12 = hour % 12;
+            TimeParts {
+                // Popup labels are 1..=12, so label 12 lives at index 11.
+                hour_index: if hour12 == 0 { 11 } else { hour12 - 1 },
+                minute_index: minute,
+                period_index: Some(if hour >= 12 { 1 } else { 0 }),
+            }
+        }
+    }
+}
+
+fn time_from_parts(
+    format: TimeFormat,
+    hour_index: isize,
+    minute_index: isize,
+    period_index: Option<isize>,
+) -> Option<NaiveTime> {
+    if !(0..=59).contains(&minute_index) {
+        return None;
+    }
+    let hour = match format {
+        TimeFormat::TwentyFour => {
+            if !(0..=23).contains(&hour_index) {
+                return None;
+            }
+            hour_index
+        }
+        TimeFormat::AmPm => {
+            if !(0..=11).contains(&hour_index) {
+                return None;
+            }
+            let period = period_index?;
+            if !(0..=1).contains(&period) {
+                return None;
+            }
+            let hour12 = hour_index + 1;
+            let base = if hour12 == 12 { 0 } else { hour12 };
+            if period == 1 {
+                base + 12
+            } else {
+                base
+            }
+        }
+    };
+    NaiveTime::from_hms_opt(hour as u32, minute_index as u32, 0)
+}
+
 /// AppKit control handles shared between the Rust wrapper and the Obj-C
-/// handler. The handler needs the text-field handle so it can toggle its
-/// `enabled` state when the battery checkbox is clicked.
+/// handler. The handler uses these references to keep related controls in
+/// sync when a checkbox, stepper, popup, or sidebar tab fires.
 ///
 /// # Safety
 ///
@@ -73,18 +157,31 @@ const DEFAULT_IN_TRANSIT_MINUTES: u32 = 2;
 /// main-thread menu click) or from the AppKit-invoked selectors on
 /// `PrefsHandler` (which is `MainThreadOnly`).
 struct PrefsControls {
+    general_tab: Retained<NSButton>,
+    safeguards_tab: Retained<NSButton>,
+    schedule_tab: Retained<NSButton>,
+    general_panel: Retained<NSView>,
+    safeguards_panel: Retained<NSView>,
+    schedule_panel: Retained<NSView>,
     start_at_login: Retained<NSButton>,
     activate_at_launch: Retained<NSButton>,
     prevent_display_sleep: Retained<NSButton>,
     battery_checkbox: Retained<NSButton>,
     battery_field: Retained<NSTextField>,
+    battery_stepper: Retained<NSStepper>,
     schedule_master: Retained<NSButton>,
-    schedule_from: Retained<NSTextField>,
-    schedule_to: Retained<NSTextField>,
+    schedule_time_format: Retained<NSSegmentedControl>,
+    schedule_from_hour: Retained<NSPopUpButton>,
+    schedule_from_minute: Retained<NSPopUpButton>,
+    schedule_from_period: Retained<NSPopUpButton>,
+    schedule_to_hour: Retained<NSPopUpButton>,
+    schedule_to_minute: Retained<NSPopUpButton>,
+    schedule_to_period: Retained<NSPopUpButton>,
     /// Day-of-week checkboxes in Mon..Sun order.
     schedule_days: [Retained<NSButton>; 7],
     in_transit_checkbox: Retained<NSButton>,
     in_transit_field: Retained<NSTextField>,
+    in_transit_stepper: Retained<NSStepper>,
 }
 
 // SAFETY: see PrefsControls doc.
@@ -96,7 +193,6 @@ unsafe impl Sync for PrefsControls {}
 pub struct PrefsHandlerIvars {
     actions: OnceCell<Arc<dyn PrefsActions>>,
     controls: OnceCell<Arc<PrefsControls>>,
-    window: OnceCell<Retained<NSWindow>>,
 }
 
 define_class!(
@@ -141,30 +237,68 @@ define_class!(
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(showGeneralPanel:))]
+        fn show_general_panel(&self, _sender: Option<&AnyObject>) {
+            if let Some(controls) = self.ivars().controls.get() {
+                show_panel(controls, PrefsPanel::General);
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(showSafeguardsPanel:))]
+        fn show_safeguards_panel(&self, _sender: Option<&AnyObject>) {
+            if let Some(controls) = self.ivars().controls.get() {
+                show_panel(controls, PrefsPanel::Safeguards);
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(showSchedulePanel:))]
+        fn show_schedule_panel(&self, _sender: Option<&AnyObject>) {
+            if let Some(controls) = self.ivars().controls.get() {
+                show_panel(controls, PrefsPanel::Schedule);
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(setBatteryThreshold:))]
-        fn set_battery_threshold(&self, _sender: Option<&AnyObject>) {
-            // Two trigger paths: the checkbox toggled (sender == checkbox), or
-            // the text field committed a new value (sender == text field).
-            // Either way we read both controls and derive the new threshold.
+        fn set_battery_threshold(&self, sender: Option<&AnyObject>) {
+            // Two trigger paths: the checkbox toggled, or the stepper changed.
+            // Either way we read the controls and derive the new threshold.
             let Some(controls) = self.ivars().controls.get() else {
                 return;
             };
             let checkbox_on = controls.battery_checkbox.state() == NSControlStateValueOn;
-            // Always keep the text-field's enabled state in sync with the
-            // checkbox — even if this invocation came from the text field
-            // (no-op in that case).
+            // Always keep the read-only value field's enabled state in sync
+            // with the checkbox.
             controls.battery_field.setEnabled(checkbox_on);
+            controls.battery_stepper.setEnabled(checkbox_on);
+
+            let from_stepper = sender.is_some_and(|s| {
+                let stepper: &AnyObject = controls.battery_stepper.as_ref();
+                std::ptr::eq(s, stepper)
+            });
+            let raw = if from_stepper {
+                let v = controls.battery_stepper.intValue() as isize;
+                controls.battery_field.setIntegerValue(v);
+                v
+            } else {
+                let v = controls.battery_field.integerValue();
+                controls.battery_stepper.setIntegerValue(v);
+                v
+            };
 
             let pct = if checkbox_on {
-                let v = controls.battery_field.integerValue();
                 // Clamp to a sane range. We accept 1–100; 0 disables the
                 // feature semantically but the checkbox is the on/off — out-
                 // of-range values get clamped to the default.
-                let clamped = if (1..=100).contains(&v) {
-                    v as u8
+                let clamped = if (1..=100).contains(&raw) {
+                    raw as u8
                 } else {
                     DEFAULT_BATTERY_PCT
                 };
+                controls.battery_field.setIntegerValue(clamped as isize);
+                controls.battery_stepper.setIntegerValue(clamped as isize);
                 Some(clamped)
             } else {
                 None
@@ -177,27 +311,44 @@ define_class!(
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(setInTransitTimeout:))]
-        fn set_in_transit_timeout(&self, _sender: Option<&AnyObject>) {
+        fn set_in_transit_timeout(&self, sender: Option<&AnyObject>) {
             // Same dual-trigger pattern as the battery threshold:
-            // the checkbox or the text field fires this. We always
-            // read both controls and derive the result.
+            // the checkbox or the stepper fires this. We always
+            // read the controls and derive the result.
             let Some(controls) = self.ivars().controls.get() else {
                 return;
             };
             let checkbox_on = controls.in_transit_checkbox.state() == NSControlStateValueOn;
             controls.in_transit_field.setEnabled(checkbox_on);
-            let minutes = if checkbox_on {
+            controls.in_transit_stepper.setEnabled(checkbox_on);
+            let from_stepper = sender.is_some_and(|s| {
+                let stepper: &AnyObject = controls.in_transit_stepper.as_ref();
+                std::ptr::eq(s, stepper)
+            });
+            let raw = if from_stepper {
+                let v = controls.in_transit_stepper.intValue() as isize;
+                controls.in_transit_field.setIntegerValue(v);
+                v
+            } else {
                 let v = controls.in_transit_field.integerValue();
+                controls.in_transit_stepper.setIntegerValue(v);
+                v
+            };
+            let minutes = if checkbox_on {
                 // 1..=120 minutes. Out-of-range values fall back to the
                 // sensible default so a user typo can't silently disable
                 // or stretch the safeguard. 120 minutes is a generous
                 // upper bound: longer than that and the feature is
                 // effectively never-fires.
-                let clamped = if (1..=120).contains(&v) {
-                    v as u32
+                let clamped = if (1..=120).contains(&raw) {
+                    raw as u32
                 } else {
                     DEFAULT_IN_TRANSIT_MINUTES
                 };
+                controls.in_transit_field.setIntegerValue(clamped as isize);
+                controls
+                    .in_transit_stepper
+                    .setIntegerValue(clamped as isize);
                 Some(clamped)
             } else {
                 None
@@ -227,6 +378,22 @@ define_class!(
         }
 
         // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
+        #[unsafe(method(setScheduleTimeFormat:))]
+        fn set_schedule_time_format(&self, _sender: Option<&AnyObject>) {
+            let Some(controls) = self.ivars().controls.get() else {
+                return;
+            };
+            let current = build_schedule_from_controls_with_format(controls, popup_time_format(controls));
+            configure_time_popups(controls, selected_time_format(controls), current.start, current.end);
+            if controls.schedule_master.state() != NSControlStateValueOn {
+                return;
+            }
+            if let Some(actions) = self.ivars().actions.get() {
+                actions.set_schedule(Some(current));
+            }
+        }
+
+        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
         #[unsafe(method(setScheduleField:))]
         fn set_schedule_field(&self, _sender: Option<&AnyObject>) {
             // Any of from/to/day controls changed. If the master is off, we
@@ -244,14 +411,6 @@ define_class!(
                 actions.set_schedule(Some(s));
             }
         }
-
-        // SAFETY: The signature `(self, sender) -> ()` matches what AppKit sends.
-        #[unsafe(method(closeWindow:))]
-        fn close_window(&self, _sender: Option<&AnyObject>) {
-            if let Some(window) = self.ivars().window.get() {
-                window.close();
-            }
-        }
     }
 );
 
@@ -264,10 +423,29 @@ const DEFAULT_SCHEDULE_END: (u32, u32) = (17, 0);
 /// checked, so a freshly-ticked master checkbox always yields a sensible
 /// schedule rather than something that gates to never-active.
 fn build_schedule_from_controls(controls: &PrefsControls) -> Schedule {
-    let start = parse_hhmm_field(&controls.schedule_from).unwrap_or_else(|| {
+    build_schedule_from_controls_with_format(controls, popup_time_format(controls))
+}
+
+fn build_schedule_from_controls_with_format(
+    controls: &PrefsControls,
+    popup_format: TimeFormat,
+) -> Schedule {
+    let start = time_from_popups(
+        popup_format,
+        &controls.schedule_from_hour,
+        &controls.schedule_from_minute,
+        &controls.schedule_from_period,
+    )
+    .unwrap_or_else(|| {
         NaiveTime::from_hms_opt(DEFAULT_SCHEDULE_START.0, DEFAULT_SCHEDULE_START.1, 0).unwrap()
     });
-    let end = parse_hhmm_field(&controls.schedule_to).unwrap_or_else(|| {
+    let end = time_from_popups(
+        popup_format,
+        &controls.schedule_to_hour,
+        &controls.schedule_to_minute,
+        &controls.schedule_to_period,
+    )
+    .unwrap_or_else(|| {
         NaiveTime::from_hms_opt(DEFAULT_SCHEDULE_END.0, DEFAULT_SCHEDULE_END.1, 0).unwrap()
     });
     // Equal start/end is a zero-length window — guard the same way the CLI
@@ -299,17 +477,219 @@ fn build_schedule_from_controls(controls: &PrefsControls) -> Schedule {
     Schedule { days, start, end }
 }
 
-fn parse_hhmm_field(field: &NSTextField) -> Option<NaiveTime> {
-    let nsstr = field.stringValue();
-    NaiveTime::parse_from_str(nsstr.to_string().trim(), "%H:%M").ok()
+fn selected_time_format(controls: &PrefsControls) -> TimeFormat {
+    match controls.schedule_time_format.selectedSegment() {
+        1 => TimeFormat::AmPm,
+        _ => TimeFormat::TwentyFour,
+    }
+}
+
+fn popup_time_format(controls: &PrefsControls) -> TimeFormat {
+    if controls.schedule_from_hour.numberOfItems() == 12 {
+        TimeFormat::AmPm
+    } else {
+        TimeFormat::TwentyFour
+    }
+}
+
+fn time_from_popups(
+    format: TimeFormat,
+    hour: &NSPopUpButton,
+    minute: &NSPopUpButton,
+    period: &NSPopUpButton,
+) -> Option<NaiveTime> {
+    time_from_parts(
+        format,
+        hour.indexOfSelectedItem(),
+        minute.indexOfSelectedItem(),
+        match format {
+            TimeFormat::TwentyFour => None,
+            TimeFormat::AmPm => Some(period.indexOfSelectedItem()),
+        },
+    )
+}
+
+fn configure_time_popups(
+    controls: &PrefsControls,
+    format: TimeFormat,
+    start: NaiveTime,
+    end: NaiveTime,
+) {
+    controls
+        .schedule_time_format
+        .setSelectedSegment(match format {
+            TimeFormat::TwentyFour => 0,
+            TimeFormat::AmPm => 1,
+        });
+
+    populate_hour_popup(&controls.schedule_from_hour, format);
+    populate_hour_popup(&controls.schedule_to_hour, format);
+    populate_minute_popup(&controls.schedule_from_minute);
+    populate_minute_popup(&controls.schedule_to_minute);
+    populate_period_popup(&controls.schedule_from_period);
+    populate_period_popup(&controls.schedule_to_period);
+
+    select_time_popups(
+        &controls.schedule_from_hour,
+        &controls.schedule_from_minute,
+        &controls.schedule_from_period,
+        start,
+        format,
+    );
+    select_time_popups(
+        &controls.schedule_to_hour,
+        &controls.schedule_to_minute,
+        &controls.schedule_to_period,
+        end,
+        format,
+    );
+
+    let show_period = format == TimeFormat::AmPm;
+    controls.schedule_from_period.setHidden(!show_period);
+    controls.schedule_to_period.setHidden(!show_period);
+}
+
+fn populate_hour_popup(popup: &NSPopUpButton, format: TimeFormat) {
+    popup.removeAllItems();
+    match format {
+        TimeFormat::TwentyFour => {
+            for h in 0..24 {
+                popup.addItemWithTitle(&NSString::from_str(&format!("{h:02}")));
+            }
+        }
+        TimeFormat::AmPm => {
+            for h in 1..=12 {
+                popup.addItemWithTitle(&NSString::from_str(&h.to_string()));
+            }
+        }
+    }
+}
+
+fn populate_minute_popup(popup: &NSPopUpButton) {
+    popup.removeAllItems();
+    for m in 0..60 {
+        popup.addItemWithTitle(&NSString::from_str(&format!("{m:02}")));
+    }
+}
+
+fn populate_period_popup(popup: &NSPopUpButton) {
+    popup.removeAllItems();
+    popup.addItemWithTitle(ns_string!("AM"));
+    popup.addItemWithTitle(ns_string!("PM"));
+}
+
+fn select_time_popups(
+    hour: &NSPopUpButton,
+    minute: &NSPopUpButton,
+    period: &NSPopUpButton,
+    time: NaiveTime,
+    format: TimeFormat,
+) {
+    let parts = time_parts_for(time, format);
+    hour.selectItemAtIndex(parts.hour_index);
+    minute.selectItemAtIndex(parts.minute_index);
+    if let Some(period_index) = parts.period_index {
+        period.selectItemAtIndex(period_index);
+    }
 }
 
 fn schedule_set_subcontrols_enabled(controls: &PrefsControls, on: bool) {
-    controls.schedule_from.setEnabled(on);
-    controls.schedule_to.setEnabled(on);
+    controls.schedule_time_format.setEnabled(on);
+    controls.schedule_from_hour.setEnabled(on);
+    controls.schedule_from_minute.setEnabled(on);
+    controls.schedule_from_period.setEnabled(on);
+    controls.schedule_to_hour.setEnabled(on);
+    controls.schedule_to_minute.setEnabled(on);
+    controls.schedule_to_period.setEnabled(on);
     for btn in &controls.schedule_days {
         btn.setEnabled(on);
     }
+}
+
+fn show_panel(controls: &PrefsControls, panel: PrefsPanel) {
+    controls
+        .general_panel
+        .setHidden(panel != PrefsPanel::General);
+    controls
+        .safeguards_panel
+        .setHidden(panel != PrefsPanel::Safeguards);
+    controls
+        .schedule_panel
+        .setHidden(panel != PrefsPanel::Schedule);
+
+    controls
+        .general_tab
+        .setState(if panel == PrefsPanel::General {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+    controls
+        .safeguards_tab
+        .setState(if panel == PrefsPanel::Safeguards {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+    controls
+        .schedule_tab
+        .setState(if panel == PrefsPanel::Schedule {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+}
+
+fn label(text: &str, frame: NSRect, mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let field = NSTextField::labelWithString(&NSString::from_str(text), mtm);
+    field.setFrame(frame);
+    field
+}
+
+fn wrapping_label(text: &str, frame: NSRect, mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let field = NSTextField::wrappingLabelWithString(&NSString::from_str(text), mtm);
+    field.setFrame(frame);
+    field
+}
+
+fn panel(frame: NSRect, mtm: MainThreadMarker) -> Retained<NSView> {
+    NSView::initWithFrame(NSView::alloc(mtm), frame)
+}
+
+fn popup(
+    frame: NSRect,
+    handler_obj: &AnyObject,
+    action: Sel,
+    mtm: MainThreadMarker,
+) -> Retained<NSPopUpButton> {
+    let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), ns_string!(""));
+    let button = unsafe {
+        NSPopUpButton::popUpButtonWithMenu_target_action(&menu, Some(handler_obj), Some(action))
+    };
+    button.setFrame(frame);
+    button
+}
+
+fn stepper(
+    frame: NSRect,
+    min: f64,
+    max: f64,
+    value: isize,
+    handler_obj: &AnyObject,
+    action: Sel,
+    mtm: MainThreadMarker,
+) -> Retained<NSStepper> {
+    let stepper = NSStepper::initWithFrame(NSStepper::alloc(mtm), frame);
+    stepper.setMinValue(min);
+    stepper.setMaxValue(max);
+    stepper.setIncrement(1.0);
+    stepper.setIntegerValue(value);
+    stepper.setContinuous(false);
+    unsafe {
+        stepper.setTarget(Some(handler_obj));
+        stepper.setAction(Some(action));
+    }
+    stepper
 }
 
 /// Read an NSButton (checkbox)'s state as a plain bool. `sender` is the
@@ -333,9 +713,8 @@ impl PrefsHandler {
         unsafe { msg_send![super(this), init] }
     }
 
-    fn install(&self, controls: Arc<PrefsControls>, window: Retained<NSWindow>) {
+    fn install(&self, controls: Arc<PrefsControls>) {
         let _ = self.ivars().controls.set(controls);
-        let _ = self.ivars().window.set(window);
     }
 }
 
@@ -365,10 +744,9 @@ impl PreferencesWindow {
         // Frame is in screen coordinates at construction time; `center()`
         // is called on each show so the origin here is irrelevant.
         //
-        // Height: 480 px. The in-transit auto-disable row reclaims the
-        // space the Default-duration popup occupied pre-v2.1, so the
-        // top section sits at its original y-coordinates again.
-        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(480.0, 480.0));
+        // Slightly wider than the previous single-column window so the
+        // sidebar can carry navigation without crowding each settings panel.
+        let content_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(680.0, 560.0));
         let style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
             | NSWindowStyleMask::Miniaturizable;
@@ -392,34 +770,82 @@ impl PreferencesWindow {
         let handler = PrefsHandler::new(mtm, actions);
         let handler_obj: &AnyObject = handler.as_ref();
 
-        // Build controls. Coordinates are in the content view's coordinate
-        // system (origin = bottom-left, y grows upward).
-        //
-        // Layout sketch (480 wide, 480 tall content):
-        //   y=390: header text (multi-line, 70 tall)
-        //   y=360: "Start OpenLid at login"
-        //   y=330: "Activate OpenLid at launch"
-        //   y=300: "Keep display awake while preventing sleep"
-        //   y=250: "Turn off when battery is below" [field] %
-        //   y=200: "Auto-disable in transit"          [field] min
-        //   y=160: "Active only during scheduled hours" (master checkbox)
-        //   y=125: "From" [HH:MM] "To" [HH:MM]
-        //   y= 90: [Mo][Tu][We][Th][Fr][Sa][Su]
-        //   y= 16: [Close] (right-aligned)
         let content_view = window
             .contentView()
             .expect("NSWindow always has a content view");
 
-        // Header label — two-paragraph wrapping text.
-        let header_text = ns_string!(
-            "OpenLid is now running. You can find its icon in your menu bar.\n\nRight-click (or \u{2325}-click) the menu bar icon to show the OpenLid menu."
+        // Sidebar navigation.
+        let sidebar = panel(
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(142.0, 560.0)),
+            mtm,
         );
-        let header = NSTextField::wrappingLabelWithString(header_text, mtm);
-        header.setFrame(NSRect::new(
-            NSPoint::new(20.0, 390.0),
-            NSSize::new(440.0, 70.0),
+        content_view.addSubview(&sidebar);
+
+        let general_tab = unsafe {
+            NSButton::radioButtonWithTitle_target_action(
+                ns_string!("General"),
+                Some(handler_obj),
+                Some(sel!(showGeneralPanel:)),
+                mtm,
+            )
+        };
+        general_tab.setFrame(NSRect::new(
+            NSPoint::new(16.0, 496.0),
+            NSSize::new(118.0, 24.0),
         ));
-        content_view.addSubview(&header);
+        general_tab.setState(NSControlStateValueOn);
+        sidebar.addSubview(&general_tab);
+
+        let safeguards_tab = unsafe {
+            NSButton::radioButtonWithTitle_target_action(
+                ns_string!("Safeguards"),
+                Some(handler_obj),
+                Some(sel!(showSafeguardsPanel:)),
+                mtm,
+            )
+        };
+        safeguards_tab.setFrame(NSRect::new(
+            NSPoint::new(16.0, 464.0),
+            NSSize::new(118.0, 24.0),
+        ));
+        sidebar.addSubview(&safeguards_tab);
+
+        let schedule_tab = unsafe {
+            NSButton::radioButtonWithTitle_target_action(
+                ns_string!("Schedule"),
+                Some(handler_obj),
+                Some(sel!(showSchedulePanel:)),
+                mtm,
+            )
+        };
+        schedule_tab.setFrame(NSRect::new(
+            NSPoint::new(16.0, 432.0),
+            NSSize::new(118.0, 24.0),
+        ));
+        sidebar.addSubview(&schedule_tab);
+
+        let panel_frame = NSRect::new(NSPoint::new(142.0, 0.0), NSSize::new(538.0, 560.0));
+        let general_panel = panel(panel_frame, mtm);
+        let safeguards_panel = panel(panel_frame, mtm);
+        let schedule_panel = panel(panel_frame, mtm);
+        safeguards_panel.setHidden(true);
+        schedule_panel.setHidden(true);
+        content_view.addSubview(&general_panel);
+        content_view.addSubview(&safeguards_panel);
+        content_view.addSubview(&schedule_panel);
+
+        let general_title = label(
+            "General",
+            NSRect::new(NSPoint::new(28.0, 504.0), NSSize::new(480.0, 24.0)),
+            mtm,
+        );
+        general_panel.addSubview(&general_title);
+        let general_copy = wrapping_label(
+            "OpenLid is running. Use these settings to control startup behavior and display sleep.",
+            NSRect::new(NSPoint::new(28.0, 466.0), NSSize::new(480.0, 34.0)),
+            mtm,
+        );
+        general_panel.addSubview(&general_copy);
 
         // Checkbox: Start at login.
         // SAFETY: the convenience constructor calls Cocoa internals that are
@@ -433,10 +859,16 @@ impl PreferencesWindow {
             )
         };
         start_at_login.setFrame(NSRect::new(
-            NSPoint::new(20.0, 360.0),
-            NSSize::new(440.0, 20.0),
+            NSPoint::new(28.0, 410.0),
+            NSSize::new(460.0, 24.0),
         ));
-        content_view.addSubview(&start_at_login);
+        general_panel.addSubview(&start_at_login);
+        let start_help = wrapping_label(
+            "Open automatically when you sign in.",
+            NSRect::new(NSPoint::new(50.0, 386.0), NSSize::new(430.0, 22.0)),
+            mtm,
+        );
+        general_panel.addSubview(&start_help);
 
         // Checkbox: Activate at launch.
         let activate_at_launch = unsafe {
@@ -448,10 +880,16 @@ impl PreferencesWindow {
             )
         };
         activate_at_launch.setFrame(NSRect::new(
-            NSPoint::new(20.0, 330.0),
-            NSSize::new(440.0, 20.0),
+            NSPoint::new(28.0, 338.0),
+            NSSize::new(460.0, 24.0),
         ));
-        content_view.addSubview(&activate_at_launch);
+        general_panel.addSubview(&activate_at_launch);
+        let activate_help = wrapping_label(
+            "Turn sleep prevention on whenever OpenLid starts. Turn this off to restore the last on/off state.",
+            NSRect::new(NSPoint::new(50.0, 304.0), NSSize::new(430.0, 34.0)),
+            mtm,
+        );
+        general_panel.addSubview(&activate_help);
 
         // Checkbox: Keep display awake while preventing sleep.
         // Default is on; users who actually want their screen to lock on
@@ -465,10 +903,29 @@ impl PreferencesWindow {
             )
         };
         prevent_display_sleep.setFrame(NSRect::new(
-            NSPoint::new(20.0, 300.0),
-            NSSize::new(440.0, 20.0),
+            NSPoint::new(28.0, 246.0),
+            NSSize::new(460.0, 24.0),
         ));
-        content_view.addSubview(&prevent_display_sleep);
+        general_panel.addSubview(&prevent_display_sleep);
+        let display_help = wrapping_label(
+            "Avoid idle dimming and screen lock while OpenLid is actively preventing sleep.",
+            NSRect::new(NSPoint::new(50.0, 214.0), NSSize::new(430.0, 34.0)),
+            mtm,
+        );
+        general_panel.addSubview(&display_help);
+
+        let safeguards_title = label(
+            "Safeguards",
+            NSRect::new(NSPoint::new(28.0, 504.0), NSSize::new(480.0, 24.0)),
+            mtm,
+        );
+        safeguards_panel.addSubview(&safeguards_title);
+        let safeguards_copy = wrapping_label(
+            "Automatic turn-off rules prevent accidental drain or heat when OpenLid should stand down.",
+            NSRect::new(NSPoint::new(28.0, 466.0), NSSize::new(480.0, 34.0)),
+            mtm,
+        );
+        safeguards_panel.addSubview(&safeguards_copy);
 
         // Checkbox + field + label: Battery threshold.
         let battery_checkbox = unsafe {
@@ -480,30 +937,47 @@ impl PreferencesWindow {
             )
         };
         battery_checkbox.setFrame(NSRect::new(
-            NSPoint::new(20.0, 250.0),
-            NSSize::new(260.0, 20.0),
+            NSPoint::new(28.0, 402.0),
+            NSSize::new(300.0, 24.0),
         ));
-        content_view.addSubview(&battery_checkbox);
+        safeguards_panel.addSubview(&battery_checkbox);
+        let battery_help = wrapping_label(
+            "Disarm automatically before battery drain becomes risky.",
+            NSRect::new(NSPoint::new(50.0, 376.0), NSSize::new(300.0, 24.0)),
+            mtm,
+        );
+        safeguards_panel.addSubview(&battery_help);
 
-        let battery_field_frame = NSRect::new(NSPoint::new(290.0, 246.0), NSSize::new(50.0, 24.0));
+        let battery_field_frame = NSRect::new(NSPoint::new(350.0, 399.0), NSSize::new(48.0, 24.0));
         let battery_field =
             NSTextField::initWithFrame(NSTextField::alloc(mtm), battery_field_frame);
         battery_field.setBezeled(true);
-        battery_field.setEditable(true);
-        battery_field.setSelectable(true);
+        battery_field.setEditable(false);
+        battery_field.setSelectable(false);
         battery_field.setIntegerValue(DEFAULT_BATTERY_PCT as isize);
         unsafe {
             battery_field.setTarget(Some(handler_obj));
             battery_field.setAction(Some(sel!(setBatteryThreshold:)));
         }
-        content_view.addSubview(&battery_field);
+        safeguards_panel.addSubview(&battery_field);
+
+        let battery_stepper = stepper(
+            NSRect::new(NSPoint::new(402.0, 397.0), NSSize::new(20.0, 28.0)),
+            1.0,
+            100.0,
+            DEFAULT_BATTERY_PCT as isize,
+            handler_obj,
+            sel!(setBatteryThreshold:),
+            mtm,
+        );
+        safeguards_panel.addSubview(&battery_stepper);
 
         let percent_label = NSTextField::labelWithString(ns_string!("%"), mtm);
         percent_label.setFrame(NSRect::new(
-            NSPoint::new(346.0, 250.0),
+            NSPoint::new(430.0, 402.0),
             NSSize::new(20.0, 20.0),
         ));
-        content_view.addSubview(&percent_label);
+        safeguards_panel.addSubview(&percent_label);
 
         // Checkbox + field + label: in-transit auto-disable.
         // Mirrors the battery row's visual pattern (checkbox-label, numeric
@@ -517,31 +991,61 @@ impl PreferencesWindow {
             )
         };
         in_transit_checkbox.setFrame(NSRect::new(
-            NSPoint::new(20.0, 200.0),
-            NSSize::new(260.0, 20.0),
+            NSPoint::new(28.0, 286.0),
+            NSSize::new(300.0, 24.0),
         ));
-        content_view.addSubview(&in_transit_checkbox);
+        safeguards_panel.addSubview(&in_transit_checkbox);
+        let transit_help = wrapping_label(
+            "Disarm if the laptop is likely packed away: lid closed, on battery, no display, and no network.",
+            NSRect::new(NSPoint::new(50.0, 250.0), NSSize::new(300.0, 36.0)),
+            mtm,
+        );
+        safeguards_panel.addSubview(&transit_help);
 
         let in_transit_field_frame =
-            NSRect::new(NSPoint::new(290.0, 196.0), NSSize::new(50.0, 24.0));
+            NSRect::new(NSPoint::new(350.0, 283.0), NSSize::new(48.0, 24.0));
         let in_transit_field =
             NSTextField::initWithFrame(NSTextField::alloc(mtm), in_transit_field_frame);
         in_transit_field.setBezeled(true);
-        in_transit_field.setEditable(true);
-        in_transit_field.setSelectable(true);
+        in_transit_field.setEditable(false);
+        in_transit_field.setSelectable(false);
         in_transit_field.setIntegerValue(DEFAULT_IN_TRANSIT_MINUTES as isize);
         unsafe {
             in_transit_field.setTarget(Some(handler_obj));
             in_transit_field.setAction(Some(sel!(setInTransitTimeout:)));
         }
-        content_view.addSubview(&in_transit_field);
+        safeguards_panel.addSubview(&in_transit_field);
+
+        let in_transit_stepper = stepper(
+            NSRect::new(NSPoint::new(402.0, 281.0), NSSize::new(20.0, 28.0)),
+            1.0,
+            120.0,
+            DEFAULT_IN_TRANSIT_MINUTES as isize,
+            handler_obj,
+            sel!(setInTransitTimeout:),
+            mtm,
+        );
+        safeguards_panel.addSubview(&in_transit_stepper);
 
         let in_transit_min_label = NSTextField::labelWithString(ns_string!("min"), mtm);
         in_transit_min_label.setFrame(NSRect::new(
-            NSPoint::new(346.0, 200.0),
+            NSPoint::new(430.0, 286.0),
             NSSize::new(28.0, 20.0),
         ));
-        content_view.addSubview(&in_transit_min_label);
+        safeguards_panel.addSubview(&in_transit_min_label);
+
+        let schedule_title = label(
+            "Schedule",
+            NSRect::new(NSPoint::new(28.0, 504.0), NSSize::new(480.0, 24.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_title);
+        let schedule_copy = wrapping_label(
+            "Constrain OpenLid to recurring active hours. Changes save automatically as you edit.",
+            NSRect::new(NSPoint::new(28.0, 466.0), NSSize::new(480.0, 34.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_copy);
 
         // Schedule section. The master checkbox toggles whether a schedule
         // is active; the sub-controls below are visually disabled when off.
@@ -554,54 +1058,111 @@ impl PreferencesWindow {
             )
         };
         schedule_master.setFrame(NSRect::new(
-            NSPoint::new(20.0, 160.0),
-            NSSize::new(440.0, 20.0),
+            NSPoint::new(28.0, 414.0),
+            NSSize::new(460.0, 24.0),
         ));
-        content_view.addSubview(&schedule_master);
+        schedule_panel.addSubview(&schedule_master);
 
-        // "From" label + HH:MM text field.
-        let from_label = NSTextField::labelWithString(ns_string!("From:"), mtm);
-        from_label.setFrame(NSRect::new(
-            NSPoint::new(40.0, 129.0),
-            NSSize::new(40.0, 20.0),
+        let time_format_label = label(
+            "Time format",
+            NSRect::new(NSPoint::new(28.0, 370.0), NSSize::new(120.0, 20.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&time_format_label);
+        let labels = NSArray::from_slice(&[ns_string!("24-hour"), ns_string!("AM/PM")]);
+        let schedule_time_format = unsafe {
+            NSSegmentedControl::segmentedControlWithLabels_trackingMode_target_action(
+                &labels,
+                NSSegmentSwitchTracking::SelectOne,
+                Some(handler_obj),
+                Some(sel!(setScheduleTimeFormat:)),
+                mtm,
+            )
+        };
+        schedule_time_format.setFrame(NSRect::new(
+            NSPoint::new(160.0, 364.0),
+            NSSize::new(190.0, 28.0),
         ));
-        content_view.addSubview(&from_label);
+        schedule_time_format.setSelectedSegment(0);
+        schedule_panel.addSubview(&schedule_time_format);
 
-        let schedule_from_frame = NSRect::new(NSPoint::new(80.0, 125.0), NSSize::new(70.0, 24.0));
-        let schedule_from =
-            NSTextField::initWithFrame(NSTextField::alloc(mtm), schedule_from_frame);
-        schedule_from.setBezeled(true);
-        schedule_from.setEditable(true);
-        schedule_from.setSelectable(true);
-        schedule_from.setStringValue(ns_string!("09:00"));
-        unsafe {
-            schedule_from.setTarget(Some(handler_obj));
-            schedule_from.setAction(Some(sel!(setScheduleField:)));
-        }
-        content_view.addSubview(&schedule_from);
+        let from_label = label(
+            "From",
+            NSRect::new(NSPoint::new(28.0, 320.0), NSSize::new(60.0, 20.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&from_label);
+        let schedule_from_hour = popup(
+            NSRect::new(NSPoint::new(160.0, 314.0), NSSize::new(72.0, 28.0)),
+            handler_obj,
+            sel!(setScheduleField:),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_from_hour);
+        let from_colon = label(
+            ":",
+            NSRect::new(NSPoint::new(238.0, 318.0), NSSize::new(10.0, 20.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&from_colon);
+        let schedule_from_minute = popup(
+            NSRect::new(NSPoint::new(252.0, 314.0), NSSize::new(72.0, 28.0)),
+            handler_obj,
+            sel!(setScheduleField:),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_from_minute);
+        let schedule_from_period = popup(
+            NSRect::new(NSPoint::new(334.0, 314.0), NSSize::new(78.0, 28.0)),
+            handler_obj,
+            sel!(setScheduleField:),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_from_period);
 
-        let to_label = NSTextField::labelWithString(ns_string!("To:"), mtm);
-        to_label.setFrame(NSRect::new(
-            NSPoint::new(170.0, 129.0),
-            NSSize::new(30.0, 20.0),
-        ));
-        content_view.addSubview(&to_label);
+        let to_label = label(
+            "To",
+            NSRect::new(NSPoint::new(28.0, 270.0), NSSize::new(60.0, 20.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&to_label);
+        let schedule_to_hour = popup(
+            NSRect::new(NSPoint::new(160.0, 264.0), NSSize::new(72.0, 28.0)),
+            handler_obj,
+            sel!(setScheduleField:),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_to_hour);
+        let to_colon = label(
+            ":",
+            NSRect::new(NSPoint::new(238.0, 268.0), NSSize::new(10.0, 20.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&to_colon);
+        let schedule_to_minute = popup(
+            NSRect::new(NSPoint::new(252.0, 264.0), NSSize::new(72.0, 28.0)),
+            handler_obj,
+            sel!(setScheduleField:),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_to_minute);
+        let schedule_to_period = popup(
+            NSRect::new(NSPoint::new(334.0, 264.0), NSSize::new(78.0, 28.0)),
+            handler_obj,
+            sel!(setScheduleField:),
+            mtm,
+        );
+        schedule_panel.addSubview(&schedule_to_period);
 
-        let schedule_to_frame = NSRect::new(NSPoint::new(200.0, 125.0), NSSize::new(70.0, 24.0));
-        let schedule_to = NSTextField::initWithFrame(NSTextField::alloc(mtm), schedule_to_frame);
-        schedule_to.setBezeled(true);
-        schedule_to.setEditable(true);
-        schedule_to.setSelectable(true);
-        schedule_to.setStringValue(ns_string!("17:00"));
-        unsafe {
-            schedule_to.setTarget(Some(handler_obj));
-            schedule_to.setAction(Some(sel!(setScheduleField:)));
-        }
-        content_view.addSubview(&schedule_to);
+        let days_label = label(
+            "Days",
+            NSRect::new(NSPoint::new(28.0, 214.0), NSSize::new(80.0, 20.0)),
+            mtm,
+        );
+        schedule_panel.addSubview(&days_label);
 
         // Seven day-of-week checkboxes laid out across the row.
         let day_titles = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-        // 7 buttons, 60px each starting at x=20 -> end at x=440. Plenty of margin.
         let day_buttons = day_titles.map(|title| {
             let btn = unsafe {
                 NSButton::checkboxWithTitle_target_action(
@@ -617,43 +1178,41 @@ impl PreferencesWindow {
         });
         for (i, btn) in day_buttons.iter().enumerate() {
             btn.setFrame(NSRect::new(
-                NSPoint::new(20.0 + (i as f64) * 60.0, 90.0),
-                NSSize::new(58.0, 20.0),
+                NSPoint::new(160.0 + (i as f64) * 58.0, 210.0),
+                NSSize::new(56.0, 24.0),
             ));
-            content_view.addSubview(btn);
+            schedule_panel.addSubview(btn);
         }
 
-        // Close button (bottom-right).
-        let close_button = unsafe {
-            NSButton::buttonWithTitle_target_action(
-                ns_string!("Close"),
-                Some(handler_obj),
-                Some(sel!(closeWindow:)),
-                mtm,
-            )
-        };
-        close_button.setFrame(NSRect::new(
-            NSPoint::new(380.0, 16.0),
-            NSSize::new(84.0, 32.0),
-        ));
-        content_view.addSubview(&close_button);
-
-        // Stash controls for the handler to reach (it needs the battery field
-        // to toggle its enabled state when the checkbox changes).
+        // Stash controls for the handler to keep related values in sync when
+        // sidebar tabs, checkboxes, steppers, and popups change.
         let controls = Arc::new(PrefsControls {
+            general_tab,
+            safeguards_tab,
+            schedule_tab,
+            general_panel,
+            safeguards_panel,
+            schedule_panel,
             start_at_login,
             activate_at_launch,
             prevent_display_sleep,
             battery_checkbox,
             battery_field,
+            battery_stepper,
             schedule_master,
-            schedule_from,
-            schedule_to,
+            schedule_time_format,
+            schedule_from_hour,
+            schedule_from_minute,
+            schedule_from_period,
+            schedule_to_hour,
+            schedule_to_minute,
+            schedule_to_period,
             schedule_days: day_buttons,
             in_transit_checkbox,
             in_transit_field,
+            in_transit_stepper,
         });
-        handler.install(controls.clone(), window.clone());
+        handler.install(controls.clone());
 
         Self {
             window,
@@ -704,14 +1263,20 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
         Some(p) => {
             controls.battery_checkbox.setState(NSControlStateValueOn);
             controls.battery_field.setIntegerValue(p as isize);
+            controls.battery_stepper.setIntegerValue(p as isize);
             controls.battery_field.setEnabled(true);
+            controls.battery_stepper.setEnabled(true);
         }
         None => {
             controls.battery_checkbox.setState(NSControlStateValueOff);
             controls
                 .battery_field
                 .setIntegerValue(DEFAULT_BATTERY_PCT as isize);
+            controls
+                .battery_stepper
+                .setIntegerValue(DEFAULT_BATTERY_PCT as isize);
             controls.battery_field.setEnabled(false);
+            controls.battery_stepper.setEnabled(false);
         }
     }
 
@@ -720,7 +1285,9 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
         Some(min) => {
             controls.in_transit_checkbox.setState(NSControlStateValueOn);
             controls.in_transit_field.setIntegerValue(min as isize);
+            controls.in_transit_stepper.setIntegerValue(min as isize);
             controls.in_transit_field.setEnabled(true);
+            controls.in_transit_stepper.setEnabled(true);
         }
         None => {
             controls
@@ -729,7 +1296,11 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
             controls
                 .in_transit_field
                 .setIntegerValue(DEFAULT_IN_TRANSIT_MINUTES as isize);
+            controls
+                .in_transit_stepper
+                .setIntegerValue(DEFAULT_IN_TRANSIT_MINUTES as isize);
             controls.in_transit_field.setEnabled(false);
+            controls.in_transit_stepper.setEnabled(false);
         }
     }
 
@@ -742,12 +1313,7 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
     match snap.modifiers.schedule.as_ref() {
         Some(s) => {
             controls.schedule_master.setState(NSControlStateValueOn);
-            controls
-                .schedule_from
-                .setStringValue(&NSString::from_str(&s.start.format("%H:%M").to_string()));
-            controls
-                .schedule_to
-                .setStringValue(&NSString::from_str(&s.end.format("%H:%M").to_string()));
+            configure_time_popups(controls, selected_time_format(controls), s.start, s.end);
             const DAY_FLAGS: [DaysOfWeek; 7] = [
                 DaysOfWeek::MON,
                 DaysOfWeek::TUE,
@@ -764,12 +1330,61 @@ fn apply_snapshot(controls: &PrefsControls, snap: &Snapshot) {
         }
         None => {
             controls.schedule_master.setState(NSControlStateValueOff);
-            controls.schedule_from.setStringValue(ns_string!("09:00"));
-            controls.schedule_to.setStringValue(ns_string!("17:00"));
+            configure_time_popups(
+                controls,
+                selected_time_format(controls),
+                NaiveTime::from_hms_opt(DEFAULT_SCHEDULE_START.0, DEFAULT_SCHEDULE_START.1, 0)
+                    .unwrap(),
+                NaiveTime::from_hms_opt(DEFAULT_SCHEDULE_END.0, DEFAULT_SCHEDULE_END.1, 0).unwrap(),
+            );
             for btn in &controls.schedule_days {
                 btn.setState(NSControlStateValueOn);
             }
             schedule_set_subcontrols_enabled(controls, false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn time_parts_for_twenty_four_hour_dropdowns_uses_clock_hour() {
+        let t = NaiveTime::from_hms_opt(17, 45, 0).unwrap();
+
+        let parts = time_parts_for(t, TimeFormat::TwentyFour);
+
+        assert_eq!(parts.hour_index, 17);
+        assert_eq!(parts.minute_index, 45);
+        assert_eq!(parts.period_index, None);
+    }
+
+    #[test]
+    fn time_parts_for_ampm_dropdowns_maps_evening_to_pm() {
+        let t = NaiveTime::from_hms_opt(17, 45, 0).unwrap();
+
+        let parts = time_parts_for(t, TimeFormat::AmPm);
+
+        assert_eq!(parts.hour_index, 4);
+        assert_eq!(parts.minute_index, 45);
+        assert_eq!(parts.period_index, Some(1));
+    }
+
+    #[test]
+    fn time_from_parts_handles_ampm_midnight_and_noon_edges() {
+        let midnight = time_from_parts(TimeFormat::AmPm, 11, 0, Some(0)).unwrap();
+        let noon = time_from_parts(TimeFormat::AmPm, 11, 0, Some(1)).unwrap();
+
+        assert_eq!(midnight, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        assert_eq!(noon, NaiveTime::from_hms_opt(12, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn time_from_parts_rejects_out_of_range_dropdown_indexes() {
+        assert!(time_from_parts(TimeFormat::TwentyFour, 24, 0, None).is_none());
+        assert!(time_from_parts(TimeFormat::TwentyFour, 0, 60, None).is_none());
+        assert!(time_from_parts(TimeFormat::AmPm, 12, 0, Some(0)).is_none());
+        assert!(time_from_parts(TimeFormat::AmPm, 0, 0, Some(2)).is_none());
     }
 }

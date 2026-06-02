@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-02
+
+### Changed
+
+- **Preferences window redesigned around a sidebar.** Settings are now
+  grouped into General, Safeguards, and Schedule sections instead of one
+  long form, making it clearer which controls affect launch behavior,
+  automatic turn-off rules, and recurring active hours.
+- **Schedule time picking uses native dropdowns.** The Schedule section
+  now supports a 24-hour / AM-PM selector and separate hour/minute
+  dropdowns, removing the fragile free-text time fields.
+- **Battery and in-transit values are easier to change.** Numeric
+  safeguards now include steppers alongside their visible values, so
+  edits dispatch immediately and persist through the existing
+  preferences pipeline.
+
 ## [2.1.0] - 2026-05-31
 
 Open-Lid remains macOS-only in v2.1.0. Linux support is planned for
@@ -286,7 +302,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/openlid/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/openlid/openlid/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/openlid/openlid/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/openlid/openlid/releases/tag/v2.1.0
 [2.0.0]: https://github.com/openlid/openlid/releases/tag/v2.0.0
 [1.0.0]: https://github.com/openlid/openlid/releases/tag/v1.0.0
