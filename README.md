@@ -26,7 +26,7 @@ IOKit + AppKit + ServiceManagement; the Linux implementation planned for
 v3.0.0 will call logind via D-Bus.
 
 > [!NOTE]
-> **Status: v2.3.0 — stable API.** macOS 13+ on Apple Silicon today. **Linux
+> **Status: v2.3.1 — stable API.** macOS 13+ on Apple Silicon today. **Linux
 > support planned for v3.0.0; Windows depending on demand.** Signed and
 > notarized — no Gatekeeper warning. Helper installs automatically via
 > `SMAppService` — no `sudo` required. CLI subcommands, `config.toml`
