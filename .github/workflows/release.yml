@@ -30,7 +30,7 @@ jobs:
     # SHA-256 (Homebrew cask, install scripts, supply-chain refs).
     if: github.event_name == 'workflow_dispatch' || github.event.created
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
@@ -212,15 +212,25 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: publish draft release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.ver.outputs.version }}
-          name: ${{ steps.ver.outputs.version }}
-          body_path: RELEASE_NOTES.md
-          draft: true
-          files: |
-            OpenLid-*.dmg
-            OpenLid-*.dmg.sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release edit "$VERSION" \
+              --draft \
+              --title "$VERSION" \
+              --notes-file RELEASE_NOTES.md
+            gh release upload "$VERSION" OpenLid-*.dmg OpenLid-*.dmg.sha256 --clobber
+          else
+            gh release create "$VERSION" \
+              OpenLid-*.dmg \
+              OpenLid-*.dmg.sha256 \
+              --draft \
+              --title "$VERSION" \
+              --notes-file RELEASE_NOTES.md \
+              --verify-tag
+          fi
 
       - name: clean up keychain
         if: always()
