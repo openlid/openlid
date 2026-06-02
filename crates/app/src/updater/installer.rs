@@ -267,6 +267,40 @@ mod tests {
     }
 
     #[test]
+    fn render_installer_script_waits_for_old_menubar_before_relaunch() {
+        // `open -b io.openlid.app` can hit the single-instance guard if
+        // the old menubar still owns the control socket. The installer
+        // must wait for the old app process to disappear before swapping
+        // and relaunching.
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
+        let exact_app_pattern = "APP_EXEC_RE=\"$APP_PATH/Contents/MacOS/openlid([[:space:]]|$)\"";
+        let term = out.find("pkill -TERM -f \"$APP_EXEC_RE\"");
+        let wait = out.find("while pgrep -f \"$APP_EXEC_RE\"");
+        let swap = out
+            .find("log \"swapping in the new bundle\"")
+            .expect("swap step missing");
+        let relaunch = out
+            .find("log \"relaunching openlid\"")
+            .expect("relaunch step missing");
+
+        assert!(
+            out.contains(exact_app_pattern),
+            "script should match the app executable without also matching openlid-helper"
+        );
+        assert!(term.is_some(), "script should TERM the old menubar");
+        assert!(
+            wait.is_some(),
+            "script should wait for the old menubar to exit"
+        );
+        assert!(term.unwrap() < wait.unwrap(), "wait must happen after TERM");
+        assert!(
+            wait.unwrap() < swap,
+            "old menubar must be gone before swapping"
+        );
+        assert!(swap < relaunch, "relaunch must happen after the swap");
+    }
+
+    #[test]
     fn cache_dir_resolves_under_io_openlid_app() {
         // Pin the path location: a typo (e.g. `io.openlid.openlid`)
         // would point the cache somewhere users don't see when looking

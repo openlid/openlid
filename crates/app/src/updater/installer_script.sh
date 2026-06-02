@@ -15,6 +15,7 @@ set -eu
 PARENT_PID="__PARENT_PID__"
 DMG_PATH="__DMG_PATH__"
 APP_PATH="__APP_PATH__"
+APP_EXEC_RE="$APP_PATH/Contents/MacOS/openlid([[:space:]]|$)"
 
 log() {
     echo "[$(date '+%H:%M:%S')] $*"
@@ -30,8 +31,26 @@ while kill -0 "$PARENT_PID" 2>/dev/null; do sleep 0.2; done
 # but there may be a separately-launched menubar (the .app bundle
 # entry) still running.
 log "stopping any running menubar instance"
-pkill -f "$APP_PATH/Contents/MacOS/openlid" 2>/dev/null || true
-sleep 0.5
+pkill -TERM -f "$APP_EXEC_RE" 2>/dev/null || true
+
+TERM_DEADLINE=$(( $(date +%s) + 10 ))
+while pgrep -f "$APP_EXEC_RE" >/dev/null 2>&1; do
+    if [ "$(date +%s)" -ge "$TERM_DEADLINE" ]; then
+        log "old menubar still running after TERM; forcing stop"
+        pkill -KILL -f "$APP_EXEC_RE" 2>/dev/null || true
+        break
+    fi
+    sleep 0.2
+done
+
+KILL_DEADLINE=$(( $(date +%s) + 5 ))
+while pgrep -f "$APP_EXEC_RE" >/dev/null 2>&1; do
+    if [ "$(date +%s)" -ge "$KILL_DEADLINE" ]; then
+        log "old menubar still running after KILL; aborting"
+        exit 1
+    fi
+    sleep 0.2
+done
 
 # (3) Mount the DMG read-only. -nobrowse prevents Finder from showing
 # the volume; -plist gives us structured output we can parse.

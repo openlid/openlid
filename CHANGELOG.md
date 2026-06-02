@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-06-02
+
+### Fixed
+
+- **`openlid update` now waits for the old menu bar process before
+  relaunching.** The detached installer now terminates the existing app,
+  waits until the old process is gone, and only then swaps the bundle and
+  launches the updated app, avoiding a race with the single-instance guard.
+
 ## [2.3.0] - 2026-06-02
 
 ### Changed
@@ -314,7 +323,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/openlid/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/openlid/openlid/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/openlid/openlid/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/openlid/openlid/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/openlid/openlid/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/openlid/openlid/releases/tag/v2.1.0
