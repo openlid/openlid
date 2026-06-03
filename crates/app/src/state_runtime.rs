@@ -471,12 +471,9 @@ where
             s.until = None;
         }
 
-        let (desired, lid_open) = {
+        let desired = {
             let s = self.state.lock().unwrap();
-            (
-                should_prevent_sleep(&s, Local::now()),
-                s.lid == LidState::Open,
-            )
+            should_prevent_sleep(&s, Local::now())
         };
 
         // (1) System-sleep prevention via the helper. Same as before.
@@ -500,15 +497,12 @@ where
             }
         }
 
-        // (2) Display-sleep prevention via IOPMAssertion. Option-B condition:
-        // hold the assertion only while we're preventing sleep, the user
-        // hasn't opted out, AND there's actually a display worth keeping
-        // awake — i.e. the lid is open, or an external display is attached.
-        // When the lid closes with no external display, releasing the
-        // assertion lets the `force_display_sleep` branch in `on_lid_change`
-        // do its battery-saving job uncontested.
+        // (2) Display-sleep prevention via IOPMAssertion. When enabled, keep
+        // macOS's idle-display lock path suppressed for local and remote
+        // sessions alike. Explicit display-sleep calls on lid close remain a
+        // separate battery-saving side effect.
         let pref = self.config.lock().unwrap().prevent_display_sleep;
-        let want_assertion = desired && pref && (lid_open || self.display.has_external_display());
+        let want_assertion = desired && pref;
         let mut last_assert = self.last_assertion_held.lock().unwrap();
         if *last_assert != want_assertion {
             let r = if want_assertion {
@@ -1018,7 +1012,7 @@ mod tests {
         assert!(!rt.snapshot().activate_at_launch);
     }
 
-    // --- display-sleep assertion (Option B) --------------------------------
+    // --- display-sleep assertion -------------------------------------------
 
     /// Like `fresh_runtime`, but also returns the lid so tests can fire
     /// lid-change events. Default lid state is Open.
@@ -1057,6 +1051,27 @@ mod tests {
     }
 
     #[test]
+    fn enabling_with_lid_closed_acquires_display_assertion_for_remote_access() {
+        // VNC/headless use: a closed lid without an external display still
+        // needs the idle-display assertion when the preference is enabled,
+        // otherwise macOS can idle-lock the remote session.
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config.toml");
+        let power = Arc::new(MockPower::default());
+        let lid = Arc::new(MockLid::new(LidState::Closed));
+        let ps = Arc::new(MockPs::default());
+        let disp = Arc::new(MockDisplay::default());
+        let rt = StateRuntime::new(power, lid, ps, disp.clone(), cfg).unwrap();
+
+        rt.set_enabled(true, None).unwrap();
+
+        assert!(
+            disp.held.load(Ordering::SeqCst),
+            "closed-lid remote access should keep the display-idle assertion held"
+        );
+    }
+
+    #[test]
     fn disabling_releases_display_assertion() {
         let (rt, _power, _lid, _ps, disp, _dir) = fresh_runtime_with_lid();
         rt.set_enabled(true, None).unwrap();
@@ -1067,29 +1082,27 @@ mod tests {
     }
 
     #[test]
-    fn closing_lid_with_no_external_display_releases_assertion() {
-        // Per Option B, closing the lid while no external display is
-        // attached releases the assertion so that on_lid_change's
-        // force_display_sleep call lands uncontested. Re-opening must
-        // re-acquire.
+    fn closing_lid_with_no_external_display_keeps_assertion_for_remote_access() {
+        // VNC/headless use: closing the lid without an external display must
+        // keep the idle-display assertion held so macOS does not idle-lock
+        // the remote session while OpenLid is active.
         let (rt, _power, lid, _ps, disp, _dir) = fresh_runtime_with_lid();
         rt.set_enabled(true, None).unwrap();
         assert!(disp.held.load(Ordering::SeqCst));
 
         lid.fire(LidState::Closed);
         assert!(
-            !disp.held.load(Ordering::SeqCst),
-            "lid closed, no external display => assertion must be released"
+            disp.held.load(Ordering::SeqCst),
+            "closed-lid remote access should keep the display-idle assertion held"
         );
 
         lid.fire(LidState::Open);
         assert!(
             disp.held.load(Ordering::SeqCst),
-            "lid re-opened => assertion must be re-acquired"
+            "lid re-opened => assertion should still be held"
         );
-        // We should have seen exactly two acquires and one release.
-        assert_eq!(disp.acquire_calls.load(Ordering::SeqCst), 2);
-        assert_eq!(disp.release_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(disp.acquire_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(disp.release_calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]

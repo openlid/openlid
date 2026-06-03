@@ -164,11 +164,9 @@ The reconciler computes two desired states from the same `AppState`:
    dispatched to the helper over NSXPC, which runs `pmset -a disablesleep`
    under root.
 2. **Display-idle prevention** (`want_assertion = desired && cfg
-   .prevent_display_sleep && (lid_open || external_display)`) → managed
-   in-process via `IOPMAssertion`, no helper involvement. Held only while
-   there is actually a display worth keeping awake; released when the lid
-   closes with no external monitor so that the `force_display_sleep`
-   branch above lands uncontested.
+   .prevent_display_sleep`) → managed in-process via `IOPMAssertion`, no
+   helper involvement. Held whenever sleep prevention is active and the
+   user has not opted out, including closed-lid remote access.
 
 Each output has its own `last_applied`-style cache (`last_applied` and
 `last_assertion_held` respectively) so a reconcile that finds nothing
@@ -191,11 +189,9 @@ fn reconcile(&self) {
         }
         last_applied = desired;
     }
-    // (2) Display-idle sleep — in-process IOPMAssertion. Held only when
-    //     there's a display worth keeping awake.
+    // (2) Display-idle sleep — in-process IOPMAssertion.
     let want = desired
-        && cfg.prevent_display_sleep
-        && (state.lid == LidState::Open || display.has_external_display());
+        && cfg.prevent_display_sleep;
     if last_assertion_held != want {
         match want {
             true  => self.display.prevent_display_sleep(),

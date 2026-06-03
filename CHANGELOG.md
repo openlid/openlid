@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Keep display awake now also covers closed-lid remote access.** When
+  OpenLid is active and the preference is enabled, the display-idle
+  assertion remains held even with no external display attached, preventing
+  idle screen lock during VNC/headless use.
+
 ### Security
 
 - **`openlid update` now verifies the downloaded bundle's Developer ID
