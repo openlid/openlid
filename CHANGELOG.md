@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.2] - 2026-06-05
+
+### Fixed
+
+- **Toggling "Start OpenLid at login" no longer crashes the app.** The
+  launch-at-login call addressed `SMAppService` by its Swift name (`mainApp`)
+  instead of its Objective-C selector (`mainAppService`), which aborted with an
+  "unrecognized selector" exception on macOS 26.
+- **The Preferences window now opens in front of other apps.** As a menu bar
+  (accessory) app, OpenLid wasn't activated when opening Preferences, so the
+  window could appear behind the frontmost app. It now activates above other
+  apps when shown.
+- **The Preferences window follows the system appearance.** Its colors were
+  pinned to light; it now renders in dark mode when macOS is set to Dark and
+  switches live with System Settings.
+
 ## [2.3.1] - 2026-06-02
 
 ### Fixed
@@ -323,7 +339,8 @@ First tagged release. Local-use MVP.
 - Schedule modifier (active hours / days) is in the config schema but
   not yet exposed in the preferences UI.
 
-[Unreleased]: https://github.com/openlid/openlid/compare/v2.3.1...HEAD
+[Unreleased]: https://github.com/openlid/openlid/compare/v2.3.2...HEAD
+[2.3.2]: https://github.com/openlid/openlid/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/openlid/openlid/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/openlid/openlid/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/openlid/openlid/compare/v2.1.0...v2.2.0
