@@ -414,10 +414,21 @@ impl PreferencesWindow {
         if !self.window.isVisible() {
             self.window.center();
         }
-        self.window.makeKeyAndOrderFront(None);
 
+        // OpenLid is an accessory (LSUIElement) app, so it is *not* the active
+        // application when the user opens Preferences from the menu bar. A bare
+        // makeKeyAndOrderFront then leaves the window behind the frontmost app.
+        // activateIgnoringOtherApps: forces us above other apps; we order the
+        // window front afterward.
+        //
+        // We deliberately avoid -[NSApplication activate]: it is macOS 14+ (an
+        // unrecognized selector on our 13.0 deployment minimum) and is by design
+        // "cooperative", so it will not reliably raise an accessory app over the
+        // currently-active one — which is exactly the bug we are fixing.
         let app = objc2_app_kit::NSApplication::sharedApplication(mtm);
-        app.activate();
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+        self.window.makeKeyAndOrderFront(None);
     }
 }
 
