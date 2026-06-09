@@ -577,9 +577,10 @@ fn show_update_alert(outcome: UpdateCheckOutcome) {
         }
         UpdateCheckOutcome::HomebrewUpdate { latest } => {
             alert.setMessageText(&NSString::from_str(&format!("Update available: v{latest}")));
-            alert.setInformativeText(&NSString::from_str(
-                "This is a Homebrew install. To update, run:\n\n  brew upgrade openlid",
-            ));
+            alert.setInformativeText(&NSString::from_str(&format!(
+                "This is a Homebrew install. To update, run:\n\n  {}",
+                crate::updater::HOMEBREW_UPGRADE_COMMAND
+            )));
             alert.addButtonWithTitle(&NSString::from_str("OK"));
             alert.runModal();
         }

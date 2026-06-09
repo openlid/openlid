@@ -9,7 +9,7 @@
 //!   2. `release::is_newer_than_current` compares against the build's
 //!      `CARGO_PKG_VERSION` via `semver`.
 //!   3. `install_detect::is_homebrew_install` decides whether to defer
-//!      to `brew upgrade` or take over the install ourselves.
+//!      to Homebrew or take over the install ourselves.
 //!   4. For manual installs, `installer` downloads the DMG to a cache
 //!      directory, verifies SHA-256 against `assets[i].digest`, and
 //!      spawns a detached shell script that swaps the .app bundle and
@@ -22,3 +22,5 @@
 pub mod install_detect;
 pub mod installer;
 pub mod release;
+
+pub(crate) const HOMEBREW_UPGRADE_COMMAND: &str = "brew upgrade --cask openlid/tap/openlid";

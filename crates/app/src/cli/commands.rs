@@ -1,5 +1,5 @@
 use crate::cli::{ConfigArg, ScheduleArg, UpdateArg};
-use crate::updater::{install_detect, installer, release};
+use crate::updater::{install_detect, installer, release, HOMEBREW_UPGRADE_COMMAND};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Local, NaiveTime};
 use interprocess::local_socket::{
@@ -501,10 +501,9 @@ fn decide_install_action(
 }
 
 /// Multi-line human message shown to Homebrew users. Pure so the
-/// command-string contract (the exact `brew upgrade openlid`) is
-/// pinned by a test.
+/// command-string contract is pinned by a test.
 fn format_homebrew_update_advice() -> String {
-    "\nThis is a Homebrew install. To update, run:\n\n  brew upgrade openlid\n".to_string()
+    format!("\nThis is a Homebrew install. To update, run:\n\n  {HOMEBREW_UPGRADE_COMMAND}\n")
 }
 
 /// Error message returned for a dev build. Mentions the path so the
@@ -1395,10 +1394,9 @@ mod tests {
     #[test]
     fn format_homebrew_update_advice_pins_the_exact_command() {
         // Pin the command string itself: a typo would send users to
-        // run something that doesn't exist (e.g. "brew update openlid"
-        // would target brew itself, not the cask).
+        // run something Homebrew refuses to load from an untrusted tap.
         let out = format_homebrew_update_advice();
-        assert!(out.contains("brew upgrade openlid"));
+        assert!(out.contains("brew upgrade --cask openlid/tap/openlid"));
         assert!(out.contains("Homebrew"));
     }
 

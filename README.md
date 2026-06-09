@@ -240,8 +240,12 @@ settings.
 **Homebrew users** (recommended):
 
 ```bash
-brew upgrade openlid
+brew upgrade --cask openlid/tap/openlid
 ```
+
+Use the full `openlid/tap/openlid` cask token. Recent Homebrew versions
+can refuse the shorter `brew upgrade openlid` form for third-party taps
+that have not been explicitly trusted.
 
 **Manual installs** — from the terminal:
 
@@ -282,10 +286,61 @@ after a crash.
 
 ## Uninstall
 
+**Homebrew installs**:
+
 ```bash
-./scripts/dev-uninstall-helper.sh       # unloads helper + removes plist
+brew uninstall --cask openlid/tap/openlid
+```
+
+To also remove Open-Lid preferences, logs, and helper state:
+
+```bash
+brew uninstall --zap --cask openlid/tap/openlid
+```
+
+**Manual DMG installs**:
+
+1. Quit Open-Lid from the menu bar icon.
+2. If you enabled **Start Open-Lid at login**, turn it off in
+   Open-Lid preferences or in **System Settings → General → Login Items**.
+3. Stop the privileged helper if it is still loaded:
+
+   ```bash
+   sudo launchctl bootout system/io.openlid.helper 2>/dev/null || true
+   ```
+
+4. Delete the app:
+
+   ```bash
+   rm -rf /Applications/OpenLid.app
+   ```
+
+5. If you created the optional CLI symlink, remove it:
+
+   ```bash
+   sudo rm -f /usr/local/bin/openlid
+   ```
+
+6. Optional: remove preferences, logs, and helper state:
+
+   ```bash
+   rm -rf "$HOME/Library/Application Support/io.openlid.app"
+   rm -rf "$HOME/Library/Application Support/io.openlid.open-lid"
+   rm -rf "$HOME/Library/Application Support/Logs/openlid"
+   rm -rf "$HOME/Library/Application Support/Logs/open-lid"
+   rm -rf "$HOME/Library/Logs/openlid"
+   rm -rf "$HOME/Library/Logs/open-lid"
+   sudo rm -rf "/Library/Application Support/openlid"
+   sudo rm -rf "/Library/Application Support/open-lid"
+   sudo rm -rf /Library/Logs/openlid
+   sudo rm -rf /Library/Logs/open-lid
+   ```
+
+**Source/dev installs**:
+
+```bash
+./scripts/dev-uninstall-helper.sh       # unloads dev helper + removes plist
 rm -rf /Applications/OpenLid.app
-rm -rf "~/Library/Application Support/io.openlid.app"
 sudo rm -f /usr/local/bin/openlid
 ```
 
