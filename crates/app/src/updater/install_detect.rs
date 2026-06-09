@@ -4,7 +4,7 @@
 //!   * `Homebrew` — the .app at `/Applications/OpenLid.app` is a
 //!     symlink into either `/usr/local/Caskroom/openlid/...` (Intel
 //!     brew) or `/opt/homebrew/Caskroom/openlid/...` (Apple-silicon
-//!     brew). For these users we surface `brew upgrade openlid` and
+//!     brew). For these users we surface Homebrew's cask upgrade command and
 //!     stop -- never fight `brew`.
 //!   * `Manual` — the .app lives at `/Applications/OpenLid.app`
 //!     directly. We take over the install ourselves.

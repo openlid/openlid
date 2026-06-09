@@ -32,7 +32,7 @@ pub enum Command {
     #[command(subcommand)]
     Schedule(ScheduleArg),
     /// Check for and install a newer release. Homebrew installs are
-    /// routed to `brew upgrade openlid`; manual installs are handled
+    /// routed to Homebrew's cask upgrade command; manual installs are handled
     /// in-process.
     Update(UpdateArg),
 }

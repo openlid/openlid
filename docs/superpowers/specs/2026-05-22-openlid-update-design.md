@@ -10,7 +10,7 @@ Adds two user-initiated update paths:
 Both fetch the latest release from GitHub, compare versions, and for
 *manual* installs do the full download-verify-swap-relaunch flow. For
 *Homebrew* installs, both surface a clear instruction to run
-`brew upgrade openlid` and stop — we never fight `brew`.
+`brew upgrade --cask openlid/tap/openlid` and stop — we never fight `brew`.
 
 User settings persist across the update for free: the config lives at
 `~/Library/Application Support/io.openlid.app/config.toml`, outside the
@@ -23,7 +23,7 @@ User settings persist across the update for free: the config lives at
   they had before, schedule and other preferences preserved, no
   manual drag-to-Applications step.
 - A user on Homebrew gets a clear, single-command instruction
-  (`brew upgrade openlid`) rather than a competing install path.
+  (`brew upgrade --cask openlid/tap/openlid`) rather than a competing install path.
 - A user can check for updates from the menubar without touching
   the terminal.
 - The README's "no automatic update checks" privacy stance is
@@ -82,7 +82,7 @@ For `openlid update` called on a Homebrew install:
 ```
 You installed openlid via Homebrew. To update, run:
 
-  brew upgrade openlid
+  brew upgrade --cask openlid/tap/openlid
 
 This will pull the latest cask and replace the .app for you.
 ```
@@ -286,7 +286,7 @@ When clicked:
    background…"), and the detached installer takes over.
 
 For Homebrew installs, the alert instead reads "Update available;
-run `brew upgrade openlid` in your terminal" + [OK] -- no install
+run `brew upgrade --cask openlid/tap/openlid` in your terminal" + [OK] -- no install
 button.
 
 ## README update
@@ -308,7 +308,7 @@ Add a short "Updating" section after "Install":
 ```
 ## Updating
 
-Homebrew users: `brew upgrade openlid` (the recommended path).
+Homebrew users: `brew upgrade --cask openlid/tap/openlid` (the recommended path).
 
 Other installs:
 
