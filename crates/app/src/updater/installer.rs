@@ -306,6 +306,44 @@ mod tests {
     }
 
     #[test]
+    fn render_installer_script_verifies_dmg_signature_before_mounting() {
+        // Security contract: the DMG arrives via the updater's HTTP client,
+        // so nothing has assessed it when the script starts. Release DMGs are
+        // codesign-signed in CI, so the script must verify the image's own
+        // Developer ID signature BEFORE `hdiutil attach` — the disk-image
+        // parser never touches unverified bytes (a tampered image could
+        // otherwise probe for diskimages parsing bugs), and a rejected
+        // download aborts before the script kills the user's running app.
+        // This is a layer in FRONT of the bundle check, not a replacement:
+        // the bundle check (pinned by the test above) must stay, since the
+        // bundle is what actually gets installed.
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
+        // Pin the full invocation so the requirement can't silently come
+        // unbound from the `codesign` call (same rationale as the bundle
+        // check's test). No --deep: a disk image is a single code object.
+        let verify = out
+            .find(r#"codesign --verify --strict -R="$OPENLID_DMG_REQUIREMENT" "$DMG_PATH""#)
+            .expect("pinned DMG codesign invocation missing");
+        // The requirement is the helper's PROD_REQUIREMENT minus the
+        // identifier clause: a DMG's signing identifier derives from its
+        // filename (`OpenLid-v2` for OpenLid-v2.3.2.dmg), so it isn't stable
+        // across releases. The Developer ID chain + Team ID pin is what makes
+        // the check OpenLid-specific; dropping the Team ID would accept any
+        // Apple-signed image.
+        assert!(
+            out.contains(
+                r#"OPENLID_DMG_REQUIREMENT='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "X5SZL4562S"'"#
+            ),
+            "DMG requirement must pin the Developer ID chain + Team ID, got: {out}"
+        );
+        let mount = out.find("hdiutil attach").expect("mount step missing");
+        assert!(
+            verify < mount,
+            "DMG signature verification must precede mounting"
+        );
+    }
+
+    #[test]
     fn render_installer_script_waits_for_old_menubar_before_relaunch() {
         // `open -b io.openlid.app` can hit the single-instance guard if
         // the old menubar still owns the control socket. The installer
