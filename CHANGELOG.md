@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`openlid update` now verifies the downloaded bundle's Developer ID
+  signature before installing it.** The detached installer runs
+  `codesign --verify` against the same Apple-anchored Team ID the privileged
+  helper requires of its XPC clients, and aborts (leaving the existing app
+  untouched) if the new bundle isn't signed by us. Previously, when a release
+  had no published SHA-256 checksum, the install relied on a Gatekeeper check
+  that does not actually run for a programmatically-downloaded bundle (it
+  never receives the `com.apple.quarantine` attribute), so a tampered bundle
+  could have been installed. The user-facing no-checksum notice now describes
+  this real verification step instead of the inaccurate Gatekeeper claim.
+
 ## [2.3.2] - 2026-06-05
 
 ### Fixed

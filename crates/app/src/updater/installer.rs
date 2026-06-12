@@ -267,6 +267,39 @@ mod tests {
     }
 
     #[test]
+    fn render_installer_script_verifies_signature_before_destructive_swap() {
+        // Security contract: the installer downloads the DMG with an HTTP
+        // client, so the bundle is NOT quarantined and macOS runs no
+        // Gatekeeper assessment when we `open` it. The script must therefore
+        // verify the Developer ID signature itself, pinned to OpenLid's Team
+        // ID — the same anchor the privileged helper requires of XPC clients
+        // — and it MUST do so before the destructive `rm -rf "$APP_PATH"`, so
+        // a foreign-signed bundle is rejected with the user's app intact.
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
+        let verify = out
+            .find("codesign --verify")
+            .expect("signature verification step missing");
+        // The Team ID pin is what makes the check OpenLid-specific; a check
+        // weakened to e.g. bare `anchor apple` (any Apple-signed app) would
+        // be a no-op against a malicious-but-signed bundle.
+        assert!(
+            out.contains(r#"certificate leaf[subject.OU] = "X5SZL4562S""#),
+            "verification must pin OpenLid's Team ID, got: {out}"
+        );
+        assert!(
+            out.contains("identifier \"io.openlid.app\""),
+            "verification must pin the bundle identifier, got: {out}"
+        );
+        let destroy = out
+            .find("rm -rf \"$APP_PATH\"")
+            .expect("destroy step missing");
+        assert!(
+            verify < destroy,
+            "signature verification must precede the destructive swap"
+        );
+    }
+
+    #[test]
     fn render_installer_script_waits_for_old_menubar_before_relaunch() {
         // `open -b io.openlid.app` can hit the single-instance guard if
         // the old menubar still owns the control socket. The installer

@@ -141,11 +141,18 @@ If `asset.digest` is present, verify SHA-256 against it. Format on the
 wire is `sha256:<hex>`; strip the prefix.
 
 If `asset.digest` is absent (older releases, GitHub backfill miss), log
-a warning and proceed without SHA verification. Rationale: macOS
-Gatekeeper will still refuse to launch a binary whose signature doesn't
-match our Developer ID cert, so the failure mode is "the new .app
-won't launch" rather than "the user runs a tampered binary". This is
-graceful degradation, not a security regression.
+a warning and proceed to download. The bytes are still TLS-protected in
+transit from GitHub, and — crucially — the detached installer verifies the
+new bundle's Developer ID signature with `codesign --verify -R=<requirement>`
+(pinned to our Team ID, the same anchor the helper requires of XPC clients)
+*before* the destructive swap. A bundle not signed by us is rejected and the
+existing app is left untouched.
+
+Note we do NOT rely on Gatekeeper here: the DMG is downloaded
+programmatically, so it never receives the `com.apple.quarantine` attribute
+that triggers a Gatekeeper launch-time assessment. `open`-ing an
+unquarantined app performs no signature check, which is exactly why the
+installer must verify the signature itself.
 
 ## Installer (manual installs)
 
@@ -400,10 +407,11 @@ MODIFIED:
 
 - **macOS code signing**: the downloaded DMG must be signed by our
   Developer ID, same as today. The CI's `release.yml` already produces
-  notarized DMGs. If a future build accidentally ships unsigned, the
-  installer succeeds (file ops work) but the relaunch fails because
-  Gatekeeper refuses to load the new bundle. Mitigation: nothing new
-  here -- same failure mode the project already protects against in CI.
+  notarized DMGs. If a future build accidentally ships unsigned (or a
+  bundle were tampered with), the installer's `codesign --verify` step
+  rejects it before the swap and aborts with the existing app intact —
+  we do NOT depend on a Gatekeeper launch-time check, which never fires
+  for the unquarantined, programmatically-downloaded bundle.
 - **Detached script lifetime**: a `setsid nohup ... &` should be
   enough on macOS, but the script must close stdin/stdout/stderr to
   avoid TTY hang. We redirect to a log file.

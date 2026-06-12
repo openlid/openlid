@@ -71,6 +71,24 @@ if [ -z "${VOLUME_PATH:-}" ] || [ ! -d "$VOLUME_PATH" ]; then
 fi
 log "DMG mounted at: $VOLUME_PATH"
 
+# (3b) Verify the new bundle's code signature BEFORE anything destructive.
+# The DMG was fetched over HTTPS, but it was downloaded programmatically
+# (via the updater's HTTP client), so it carries no `com.apple.quarantine`
+# attribute — which means macOS will NOT run a Gatekeeper assessment when we
+# later `open` it. We therefore verify the signature ourselves here, pinning
+# the same Apple-anchored Developer ID + Team ID that the privileged helper
+# requires of its XPC clients (crates/helper/src/main.rs PROD_REQUIREMENT).
+# A bundle not signed by us is rejected and the install aborts with the
+# user's existing app left untouched.
+OPENLID_CODE_REQUIREMENT='anchor apple generic and identifier "io.openlid.app" and certificate leaf[subject.OU] = "X5SZL4562S"'
+log "verifying code signature of the new bundle"
+if ! codesign --verify --strict -R="$OPENLID_CODE_REQUIREMENT" "$VOLUME_PATH/OpenLid.app"; then
+    log "code-signature verification FAILED; refusing to install. Your existing OpenLid is unchanged."
+    hdiutil detach "$VOLUME_PATH" -quiet 2>/dev/null || true
+    exit 1
+fi
+log "code signature OK (Developer ID, Team X5SZL4562S)"
+
 # (4) Stage the new bundle next to the old, then atomically swap.
 # The `mv` is atomic on a single filesystem; the small window with
 # neither path present is irrelevant because step 2 already killed
