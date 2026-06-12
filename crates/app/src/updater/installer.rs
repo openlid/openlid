@@ -276,19 +276,25 @@ mod tests {
         // — and it MUST do so before the destructive `rm -rf "$APP_PATH"`, so
         // a foreign-signed bundle is rejected with the user's app intact.
         let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
+        // Pin the full invocation, not loose substrings: the requirement must
+        // actually be bound to the `codesign` call via -R (a defined-but-
+        // unused requirement variable would silently degrade the check to
+        // "any valid signature"), and --deep must stay so verification also
+        // covers the nested openlid-helper binary that launchd runs as root.
         let verify = out
-            .find("codesign --verify")
-            .expect("signature verification step missing");
-        // The Team ID pin is what makes the check OpenLid-specific; a check
-        // weakened to e.g. bare `anchor apple` (any Apple-signed app) would
-        // be a no-op against a malicious-but-signed bundle.
+            .find(r#"codesign --verify --deep --strict -R="$OPENLID_CODE_REQUIREMENT" "$VOLUME_PATH/OpenLid.app""#)
+            .expect("pinned codesign invocation missing");
+        // The requirement is byte-for-byte the helper's PROD_REQUIREMENT
+        // (crates/helper/src/main.rs) — keep the two in lockstep. The full
+        // Developer ID chain matters: a check weakened to bare
+        // `anchor apple generic` + Team ID would also accept bundles signed
+        // with the team's Apple *development* certs, and dropping the Team
+        // ID pin entirely would accept any Apple-signed app.
         assert!(
-            out.contains(r#"certificate leaf[subject.OU] = "X5SZL4562S""#),
-            "verification must pin OpenLid's Team ID, got: {out}"
-        );
-        assert!(
-            out.contains("identifier \"io.openlid.app\""),
-            "verification must pin the bundle identifier, got: {out}"
+            out.contains(
+                r#"OPENLID_CODE_REQUIREMENT='identifier "io.openlid.app" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "X5SZL4562S"'"#
+            ),
+            "requirement must match the helper's PROD_REQUIREMENT, got: {out}"
         );
         let destroy = out
             .find("rm -rf \"$APP_PATH\"")

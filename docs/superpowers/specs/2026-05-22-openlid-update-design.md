@@ -143,10 +143,12 @@ wire is `sha256:<hex>`; strip the prefix.
 If `asset.digest` is absent (older releases, GitHub backfill miss), log
 a warning and proceed to download. The bytes are still TLS-protected in
 transit from GitHub, and — crucially — the detached installer verifies the
-new bundle's Developer ID signature with `codesign --verify -R=<requirement>`
-(pinned to our Team ID, the same anchor the helper requires of XPC clients)
-*before* the destructive swap. A bundle not signed by us is rejected and the
-existing app is left untouched.
+new bundle's Developer ID signature with
+`codesign --verify --deep -R=<requirement>`, where the requirement is
+byte-for-byte the helper's `PROD_REQUIREMENT` (the full Developer ID chain
+pinned to our Team ID — the same requirement the helper enforces on its XPC
+clients) *before* the destructive swap. A bundle not signed by us is
+rejected and the existing app is left untouched.
 
 Note we do NOT rely on Gatekeeper here: the DMG is downloaded
 programmatically, so it never receives the `com.apple.quarantine` attribute
