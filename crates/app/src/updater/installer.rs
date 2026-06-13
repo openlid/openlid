@@ -344,6 +344,57 @@ mod tests {
     }
 
     #[test]
+    fn installer_requirements_stay_in_lockstep_with_helper_prod_requirement() {
+        // Both codesign requirements in installer_script.sh derive from ONE
+        // source of truth — the helper's `PROD_REQUIREMENT`
+        // (crates/helper/src/main.rs), the anchor the root daemon enforces on
+        // its XPC clients:
+        //   * OPENLID_CODE_REQUIREMENT — the bundle check — is PROD_REQUIREMENT
+        //     verbatim.
+        //   * OPENLID_DMG_REQUIREMENT — the DMG-file check — is PROD_REQUIREMENT
+        //     with the leading `identifier "io.openlid.app" and ` clause
+        //     dropped (a DMG's signing identifier derives from its filename, so
+        //     it isn't stable across releases).
+        // The two tests above pin each requirement against a hardcoded literal,
+        // so a Team-ID change or added cert pin in the *helper* would drift
+        // silently — every test stays green while the updater verifies against
+        // a different anchor than the root daemon. This closes that gap: extract
+        // the helper's literal from source and assert both requirements track
+        // it, so changing the helper without the installer fails the build.
+        let helper_src = include_str!("../../../helper/src/main.rs");
+        let marker = "const PROD_REQUIREMENT: &str = r#\"";
+        let start = helper_src
+            .find(marker)
+            .expect("PROD_REQUIREMENT literal not found in helper/src/main.rs (renamed?)")
+            + marker.len();
+        let len = helper_src[start..]
+            .find("\"#")
+            .expect("unterminated PROD_REQUIREMENT raw string in helper/src/main.rs");
+        let prod = &helper_src[start..start + len];
+        // Sanity: we captured the real requirement, not an empty slice.
+        assert!(
+            prod.contains("X5SZL4562S") && prod.starts_with(r#"identifier "io.openlid.app""#),
+            "extracted an unexpected PROD_REQUIREMENT: {prod:?}"
+        );
+        // The DMG requirement is PROD_REQUIREMENT minus the identifier clause.
+        let dmg_req = prod
+            .strip_prefix(r#"identifier "io.openlid.app" and "#)
+            .expect("PROD_REQUIREMENT must start with the identifier clause the DMG check drops");
+
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
+        assert!(
+            out.contains(prod),
+            "the bundle check (OPENLID_CODE_REQUIREMENT) drifted from the helper's \
+             PROD_REQUIREMENT.\n  helper: {prod}\n  must appear verbatim in installer_script.sh"
+        );
+        assert!(
+            out.contains(dmg_req),
+            "the DMG check (OPENLID_DMG_REQUIREMENT) drifted from the helper's \
+             PROD_REQUIREMENT (minus the identifier clause).\n  expected: {dmg_req}"
+        );
+    }
+
+    #[test]
     fn render_installer_script_waits_for_old_menubar_before_relaunch() {
         // `open -b io.openlid.app` can hit the single-instance guard if
         // the old menubar still owns the control socket. The installer
