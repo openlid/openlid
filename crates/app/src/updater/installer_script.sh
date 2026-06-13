@@ -71,6 +71,30 @@ if [ -z "${VOLUME_PATH:-}" ] || [ ! -d "$VOLUME_PATH" ]; then
 fi
 log "DMG mounted at: $VOLUME_PATH"
 
+# (3b) Verify the new bundle's code signature BEFORE anything destructive.
+# The DMG was fetched over HTTPS, but it was downloaded programmatically
+# (via the updater's HTTP client), so it carries no `com.apple.quarantine`
+# attribute — which means macOS will NOT run a Gatekeeper assessment when we
+# later `open` it. We therefore verify the signature ourselves here. The
+# requirement is byte-for-byte the helper's PROD_REQUIREMENT
+# (crates/helper/src/main.rs) — the full Developer ID chain pinned to our
+# Team ID, not just `anchor apple generic` + Team ID, which would also match
+# Apple *development* certs — keep the two strings in lockstep. `--deep`
+# matches the canonical verify in scripts/build-app-bundle.sh and pushes
+# verification into nested code, i.e. Contents/MacOS/openlid-helper, which
+# launchd later runs as root. (`-R` itself is only tested against the outer
+# bundle, so the helper's distinct signing identifier doesn't trip it.)
+# A bundle not signed by us is rejected and the install aborts with the
+# user's existing app left untouched.
+OPENLID_CODE_REQUIREMENT='identifier "io.openlid.app" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "X5SZL4562S"'
+log "verifying code signature of the new bundle"
+if ! codesign --verify --deep --strict -R="$OPENLID_CODE_REQUIREMENT" "$VOLUME_PATH/OpenLid.app"; then
+    log "code-signature verification FAILED; refusing to install. Your existing OpenLid is unchanged."
+    hdiutil detach "$VOLUME_PATH" -quiet 2>/dev/null || true
+    exit 1
+fi
+log "code signature OK (Developer ID, Team X5SZL4562S)"
+
 # (4) Stage the new bundle next to the old, then atomically swap.
 # The `mv` is atomic on a single filesystem; the small window with
 # neither path present is irrelevant because step 2 already killed

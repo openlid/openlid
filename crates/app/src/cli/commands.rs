@@ -610,9 +610,16 @@ fn format_download_message(name: &str, size: u64) -> String {
 
 /// Message printed when the release asset has no digest field. Pure;
 /// pin the wording so a security-relevant log line can't drift.
+///
+/// Note this does NOT claim Gatekeeper verifies the bundle on relaunch — it
+/// doesn't, because the DMG is downloaded programmatically and never gets the
+/// `com.apple.quarantine` attribute that triggers a Gatekeeper assessment.
+/// The real backstop is the explicit Developer ID signature check the
+/// detached installer runs before swapping the bundle in (see
+/// `installer_script.sh`).
 fn format_no_digest_warning() -> &'static str {
-    "Note: release has no published checksum; Gatekeeper will still verify \
-     the signature on relaunch."
+    "Note: release has no published checksum; the installer verifies the \
+     bundle's Developer ID signature before replacing your app."
 }
 
 fn format_install_handoff_message(log_path: &std::path::Path) -> String {
@@ -640,7 +647,8 @@ fn install_update(release: &release::ReleaseInfo) -> Result<()> {
         installer::verify_sha256(&plan.dest, hex).context("SHA-256 verification")?;
     } else {
         tracing::warn!(
-            "release asset has no digest; relying on Gatekeeper code-signature check on relaunch"
+            "release asset has no digest; the detached installer verifies the \
+             bundle's Developer ID signature before swapping"
         );
         println!("{}", format_no_digest_warning());
     }
@@ -1492,12 +1500,24 @@ mod tests {
     }
 
     #[test]
-    fn format_no_digest_warning_mentions_gatekeeper() {
-        // The mitigation that justifies skipping checksum verification
-        // is Gatekeeper. If the warning ever drops that word, a
-        // security reviewer would have no way to tell from logs that
-        // the install was still signature-protected.
-        assert!(format_no_digest_warning().contains("Gatekeeper"));
+    fn format_no_digest_warning_mentions_signature_verification() {
+        // The mitigation that justifies skipping checksum verification is the
+        // installer's explicit Developer ID signature check (NOT Gatekeeper —
+        // a programmatically-downloaded, unquarantined bundle never triggers a
+        // Gatekeeper assessment). The warning must describe that real backstop
+        // so a security reviewer reading logs knows the install was still
+        // signature-protected, and must not resurrect the false Gatekeeper
+        // claim.
+        let msg = format_no_digest_warning();
+        assert!(
+            msg.contains("Developer ID signature"),
+            "warning must name the real mitigation, got: {msg}"
+        );
+        assert!(
+            !msg.contains("Gatekeeper"),
+            "warning must not claim Gatekeeper verifies on relaunch (it doesn't \
+             for unquarantined downloads), got: {msg}"
+        );
     }
 
     #[test]
