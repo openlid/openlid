@@ -306,6 +306,45 @@ mod tests {
     }
 
     #[test]
+    fn installer_requirement_stays_in_lockstep_with_helper_prod_requirement() {
+        // The installer verifies the downloaded bundle against the SAME code
+        // requirement the privileged helper enforces on its XPC clients. Those
+        // two strings live in different crates with no type-level link — the
+        // helper's `PROD_REQUIREMENT` const and the installer script's
+        // hardcoded `OPENLID_CODE_REQUIREMENT` — so a Team-ID change or an
+        // added cert pin in one could silently drift from the other, either
+        // breaking every update (installer stricter than releases) or weakening
+        // verification (installer looser than the root daemon's own trust
+        // anchor). The sibling test above pins the script against a literal;
+        // this one closes the loop by extracting the helper's literal from
+        // source and asserting the rendered installer embeds it verbatim, so
+        // changing one without the other fails the build.
+        let helper_src = include_str!("../../../helper/src/main.rs");
+        let marker = "const PROD_REQUIREMENT: &str = r#\"";
+        let start = helper_src
+            .find(marker)
+            .expect("PROD_REQUIREMENT literal not found in helper/src/main.rs (renamed?)")
+            + marker.len();
+        let len = helper_src[start..]
+            .find("\"#")
+            .expect("unterminated PROD_REQUIREMENT raw string in helper/src/main.rs");
+        let prod_requirement = &helper_src[start..start + len];
+        // Sanity: we actually captured the requirement, not an empty slice.
+        assert!(
+            prod_requirement.contains("X5SZL4562S"),
+            "extracted an unexpected PROD_REQUIREMENT: {prod_requirement:?}"
+        );
+
+        let out = render_installer_script(1, Path::new("/tmp/x.dmg"), "/Applications/OpenLid.app");
+        assert!(
+            out.contains(prod_requirement),
+            "installer code requirement drifted from the helper's PROD_REQUIREMENT.\n  \
+             helper PROD_REQUIREMENT: {prod_requirement}\n  \
+             must appear verbatim in installer_script.sh's OPENLID_CODE_REQUIREMENT"
+        );
+    }
+
+    #[test]
     fn render_installer_script_waits_for_old_menubar_before_relaunch() {
         // `open -b io.openlid.app` can hit the single-instance guard if
         // the old menubar still owns the control socket. The installer
