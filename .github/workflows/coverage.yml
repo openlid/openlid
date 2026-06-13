@@ -65,7 +65,7 @@ jobs:
       # change, etc.), drop in `token: ${{ secrets.CODECOV_TOKEN }}` here
       # — the action accepts either auth method.
       - name: upload to codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           use_oidc: true
