@@ -10,7 +10,7 @@
 [![Coverage](https://codecov.io/gh/openlid/openlid/branch/main/graph/badge.svg)](https://codecov.io/gh/openlid/openlid)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/openlid/openlid)](https://github.com/openlid/openlid/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/openlid/openlid/total)](https://github.com/openlid/openlid/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/openlid/openlid/total?label=downloads)](https://github.com/openlid/openlid/releases)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/openlid)
 
 </div>
@@ -47,12 +47,12 @@ back to a locked screen for the third time today.
 
 Open-Lid handles both:
 
-- While the lid is **open**, the display stays awake — no idle dim, no
-  screen lock. You can turn this off if you'd rather have the screen
-  lock on idle.
-- While the lid is **closed**, the system stays awake but the display
-  turns off (so the battery doesn't suffer and the laptop doesn't heat
-  up). If an external display is attached, that one stays awake.
+- While Open-Lid is active, the display-idle path stays awake — no idle
+  dim, no screen lock, including remote access with the lid closed. You
+  can turn this off if you'd rather have the screen lock on idle.
+- When the lid closes without an external display, Open-Lid still asks
+  macOS to turn the physical display off so the battery and thermals do
+  not suffer. If an external display is attached, that one stays awake.
 
 Activate indefinitely, or set a recurring schedule for the hours of the
 day you want sleep prevention active. Auto-deactivate when the battery
@@ -65,8 +65,9 @@ gets low.
 - **Recurring schedule** — keep sleep prevention active only during a
   given window (e.g. 08:00–18:00 on weekdays). CLI + UI.
 - **Display stays awake while preventing sleep** — no idle dim, no
-  screen lock. Implemented via Apple's documented `IOPMAssertion`
-  API. Opt out in Preferences if you want the screen to lock on idle.
+  screen lock, including closed-lid remote access. Implemented via
+  Apple's documented `IOPMAssertion` API. Opt out in Preferences if you
+  want the screen to lock on idle.
 - **Display off when lid closes** — your battery and your thermal envelope
   thank you. Skipped automatically when an external display is connected.
 - **Mock-matched sidebar preferences window**:
@@ -173,9 +174,9 @@ Details:
 - **Activate Open-Lid at launch** — when on, every launch starts armed.
   When off (the default), restores your last state.
 - **Keep display awake while preventing sleep** — on by default. Holds
-  an `IOPMAssertion` whenever sleep prevention is active and the lid is
-  open (or an external display is attached), so the display doesn't dim
-  and the screen doesn't lock on idle. Turn it off if you'd rather the
+  an `IOPMAssertion` whenever sleep prevention is active, so the display
+  doesn't idle-dim and the screen doesn't lock on idle. This also covers
+  VNC/headless use with the lid closed. Turn it off if you'd rather the
   screen lock on idle even while Open-Lid is on; system sleep prevention
   still works.
 - **Turn off below battery %** — auto-deactivate when battery falls below
@@ -201,10 +202,9 @@ Two cooperating mechanisms:
    15 seconds of idle.
 2. **Display-sleep prevention** (idle dim / screen lock) — the menu-bar
    app holds an `IOPMAssertion` of type `PreventUserIdleDisplaySleep`
-   while Open-Lid is on and the lid is open (or an external display is
-   attached). No root needed. Released automatically when the lid closes
-   with no external display so the battery-saving
-   `pmset displaysleepnow` branch can land uncontested.
+   while Open-Lid is on. No root needed. The lid-close
+   `pmset displaysleepnow` call is still made separately to save battery
+   on the built-in panel.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design.
 
@@ -369,11 +369,10 @@ sleep. Verify Open-Lid is *on* (`openlid status` should say "ON
 
 **Screen still locks on idle while Open-Lid is on** — by default,
 Open-Lid holds an `IOPMAssertion` that prevents the display from
-sleeping while the lid is open. If your screen is still locking, check
-the "Keep display awake while preventing sleep" checkbox in Preferences
-(or set `prevent_display_sleep = true` in `config.toml`). Note that the
-assertion is intentionally released when you close the lid with no
-external display attached — so the display can sleep and save battery.
+sleeping while sleep prevention is active, including closed-lid VNC.
+If your screen is still locking, check the "Keep display awake while
+preventing sleep" checkbox in Preferences (or set
+`prevent_display_sleep = true` in `config.toml`).
 
 **I want the screen to lock on idle even when Open-Lid is on** — turn
 off "Keep display awake while preventing sleep" in Preferences, or set

@@ -62,10 +62,10 @@ pub struct Config {
 
     /// When `true` (the default), holding an `IOPMAssertion` keeps the
     /// display from going to sleep on idle while sleep prevention is active,
-    /// which in turn prevents the screen lock from engaging. Released
-    /// automatically when the lid closes and no external display is
-    /// attached, so the battery-saving force-display-sleep on lid-close
-    /// still takes effect.
+    /// which in turn prevents the screen lock from engaging. This also
+    /// covers closed-lid remote access (for example VNC); explicit
+    /// force-display-sleep on lid-close remains a separate battery-saving
+    /// side effect.
     #[serde(default = "default_prevent_display_sleep")]
     pub prevent_display_sleep: bool,
 

@@ -85,8 +85,8 @@ pub struct Snapshot {
     pub battery_threshold_pct: Option<u8>,
     /// Mirrors `Config::prevent_display_sleep`. When `true`, the runtime
     /// holds an IOPMAssertion that keeps the display awake (and therefore
-    /// the screen unlocked) whenever sleep prevention is active and the lid
-    /// is open (or an external display is attached). Defaults to `true` for
+    /// the screen unlocked) whenever sleep prevention is active. This also
+    /// applies to closed-lid remote access. Defaults to `true` for
     /// new installs; older clients deserializing a Snapshot without this
     /// field will see `false`, which is safe (they were never aware of the
     /// feature in the first place).
