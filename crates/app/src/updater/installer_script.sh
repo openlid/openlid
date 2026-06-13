@@ -21,13 +21,34 @@ log() {
     echo "[$(date '+%H:%M:%S')] $*"
 }
 
-# (1) Wait for the parent `openlid update` process to exit. kill -0
+# (1) Verify the DMG file's own signature BEFORE doing anything else:
+# before the disk-image parser touches it in step (4) — a tampered
+# image could otherwise probe for diskimages parsing bugs — and before
+# step (3) kills the user's running app, so a rejected download has
+# zero side effects. CI signs every release DMG ("sign and notarize
+# DMG" in release.yml, since v0.2.0), and this script only ever sees
+# releases newer than the one that shipped it. The requirement is the
+# helper's PROD_REQUIREMENT minus the identifier clause — a DMG's
+# signing identifier derives from its filename (`OpenLid-v2` for
+# OpenLid-v2.3.2.dmg), so it isn't stable across releases; the
+# Developer ID chain + Team ID pin is what matters. This is an extra
+# layer in front of the bundle check in step (4b), not a replacement:
+# the bundle is what actually gets installed.
+OPENLID_DMG_REQUIREMENT='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "X5SZL4562S"'
+log "verifying code signature of the downloaded DMG"
+if ! codesign --verify --strict -R="$OPENLID_DMG_REQUIREMENT" "$DMG_PATH"; then
+    log "DMG code-signature verification FAILED; refusing to install. Your existing OpenLid is unchanged."
+    exit 1
+fi
+log "DMG signature OK (Developer ID, Team X5SZL4562S)"
+
+# (2) Wait for the parent `openlid update` process to exit. kill -0
 # returns 0 if the process exists. Without this wait we'd race the
 # `rm -rf` of the .app while the parent's file handle was still open.
 log "waiting for parent pid $PARENT_PID to exit"
 while kill -0 "$PARENT_PID" 2>/dev/null; do sleep 0.2; done
 
-# (2) Kill any remaining menubar process. The parent already exited,
+# (3) Kill any remaining menubar process. The parent already exited,
 # but there may be a separately-launched menubar (the .app bundle
 # entry) still running.
 log "stopping any running menubar instance"
@@ -52,7 +73,7 @@ while pgrep -f "$APP_EXEC_RE" >/dev/null 2>&1; do
     sleep 0.2
 done
 
-# (3) Mount the DMG read-only. -nobrowse prevents Finder from showing
+# (4) Mount the DMG read-only. -nobrowse prevents Finder from showing
 # the volume; -plist gives us structured output we can parse.
 log "mounting DMG: $DMG_PATH"
 MOUNT_OUTPUT="$(hdiutil attach -nobrowse -readonly -plist "$DMG_PATH")"
@@ -71,7 +92,7 @@ if [ -z "${VOLUME_PATH:-}" ] || [ ! -d "$VOLUME_PATH" ]; then
 fi
 log "DMG mounted at: $VOLUME_PATH"
 
-# (3b) Verify the new bundle's code signature BEFORE anything destructive.
+# (4b) Verify the new bundle's code signature BEFORE anything destructive.
 # The DMG was fetched over HTTPS, but it was downloaded programmatically
 # (via the updater's HTTP client), so it carries no `com.apple.quarantine`
 # attribute — which means macOS will NOT run a Gatekeeper assessment when we
@@ -95,9 +116,9 @@ if ! codesign --verify --deep --strict -R="$OPENLID_CODE_REQUIREMENT" "$VOLUME_P
 fi
 log "code signature OK (Developer ID, Team X5SZL4562S)"
 
-# (4) Stage the new bundle next to the old, then atomically swap.
+# (5) Stage the new bundle next to the old, then atomically swap.
 # The `mv` is atomic on a single filesystem; the small window with
-# neither path present is irrelevant because step 2 already killed
+# neither path present is irrelevant because step 3 already killed
 # the user-visible process.
 log "staging new bundle at ${APP_PATH}.new"
 rm -rf "${APP_PATH}.new"
@@ -107,12 +128,12 @@ log "swapping in the new bundle"
 rm -rf "$APP_PATH"
 mv "${APP_PATH}.new" "$APP_PATH"
 
-# (5) Detach the DMG. Failure is non-fatal -- macOS auto-detaches
+# (6) Detach the DMG. Failure is non-fatal -- macOS auto-detaches
 # after a while.
 log "detaching DMG"
 hdiutil detach "$VOLUME_PATH" -quiet 2>/dev/null || true
 
-# (6) Refresh LaunchServices and Spotlight metadata so the new .app
+# (7) Refresh LaunchServices and Spotlight metadata so the new .app
 # is recognised immediately rather than after the next reboot. Same
 # steps as scripts/dev-install-app.sh.
 log "refreshing LaunchServices / Spotlight"
@@ -120,12 +141,12 @@ touch "$APP_PATH"
 mdimport "$APP_PATH" 2>/dev/null || true
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP_PATH" 2>/dev/null || true
 
-# (7) Relaunch the menubar app via its bundle identifier. LaunchServices
+# (8) Relaunch the menubar app via its bundle identifier. LaunchServices
 # now points at the new bundle.
 log "relaunching openlid"
 open -b io.openlid.app
 
-# (8) Clean up the downloaded DMG. The cache dir is reusable; the
+# (9) Clean up the downloaded DMG. The cache dir is reusable; the
 # specific DMG file is not.
 rm -f "$DMG_PATH"
 

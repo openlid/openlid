@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never receives the `com.apple.quarantine` attribute), so a tampered bundle
   could have been installed. The user-facing no-checksum notice now describes
   this real verification step instead of the inaccurate Gatekeeper claim.
+- **The installer also verifies the downloaded DMG file's own Developer ID
+  signature before mounting it.** Release DMGs are signed in CI; checking
+  the image before `hdiutil attach` keeps the disk-image parser from ever
+  processing unverified bytes, and a rejected download aborts before the
+  installer stops the running app — with zero side effects.
 
 ## [2.3.2] - 2026-06-05
 

@@ -156,6 +156,13 @@ that triggers a Gatekeeper launch-time assessment. `open`-ing an
 unquarantined app performs no signature check, which is exactly why the
 installer must verify the signature itself.
 
+As a layer in front of that, the installer also verifies the DMG *file's*
+own Developer ID signature (CI signs every release DMG) before `hdiutil
+attach`, so the disk-image parser never touches unverified bytes. That
+requirement drops the identifier clause — a DMG's signing identifier
+derives from its filename, so it isn't stable across releases — and pins
+the Developer ID chain + Team ID.
+
 ## Installer (manual installs)
 
 Two-phase: a detached shell script that survives the parent's exit
