@@ -13,6 +13,8 @@
 [![GitHub downloads](https://img.shields.io/github/downloads/openlid/openlid/total?label=downloads)](https://github.com/openlid/openlid/releases)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%C2%B7%20Linux%20planned-black.svg?logo=apple)](https://github.com/openlid/openlid)
 
+[Website](https://openlid.github.io/openlid/) · [Download](https://github.com/openlid/openlid/releases/latest) · [Install guide](https://openlid.github.io/openlid/#methods) · [Coding agents workflow](https://openlid.github.io/openlid/coding-agents)
+
 </div>
 
 Open-Lid is a tiny menu bar utility that keeps your laptop awake — with

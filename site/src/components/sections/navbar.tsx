@@ -12,7 +12,7 @@ import { sitePath } from "@/lib/site-path";
  * @ployComponentPattern navbar
  * @ployComponentStatus stable
  * @ployComponentDescription Sticky top navigation for OpenLid. Wordmark left,
- * centered anchor links, and right-side actions (GitHub star count + Download
+ * centered anchor links, and right-side actions (GitHub star action + Download
  * button). Collapses to a simple drawer on mobile. Links and the GitHub repo URL
  * are props with sensible defaults.
  */
@@ -34,12 +34,12 @@ export function Navbar({
   links = DEFAULT_LINKS,
   repoUrl = "https://github.com/openlid/openlid",
   downloadUrl = "https://github.com/openlid/openlid/releases/latest",
-  stars = "9",
+  githubLabel = "Star",
 }: {
   links?: NavLink[];
   repoUrl?: string;
   downloadUrl?: string;
-  stars?: string;
+  githubLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -67,13 +67,13 @@ export function Navbar({
             href={repoUrl}
             target="_blank"
             rel="noreferrer"
-            aria-label={`${stars} GitHub stars for OpenLid`}
+            aria-label="Star OpenLid on GitHub"
             className="inline-flex items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-sm text-ploy-text-secondary transition-colors hover:text-ploy-text-primary"
           >
             <GitHubMark className="size-4" />
             <span className="inline-flex items-center gap-1">
               <Star className="size-3.5 fill-current text-ploy-accent-primary" />
-              {stars}
+              {githubLabel}
             </span>
           </a>
           <Button asChild size="sm">
