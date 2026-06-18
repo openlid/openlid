@@ -10,9 +10,9 @@ import type { TechArticle, WithContext } from "schema-dts";
 export const prerender = true;
 
 const title =
-  "Control Claude Code and Codex from your phone while your MacBook is closed";
+  "Control coding harnesses from your phone while your MacBook is closed";
 const description =
-  "Use OpenLid to keep Claude Code Remote Control, Codex remote connections, builds, tests, and local agent sessions running on your laptop while you steer them from your phone.";
+  "Use OpenLid to keep Claude Code, Codex, Pi, OpenCode, Hermes, builds, tests, and local harness sessions running on your laptop while you steer them from your phone.";
 
 const canonicalUrl = Astro.site
   ? new URL(sitePath("/coding-agents"), Astro.site).toString()
@@ -28,6 +28,9 @@ const jsonLd: WithContext<TechArticle> = {
   about: [
     { "@type": "Thing", name: "Claude Code" },
     { "@type": "Thing", name: "Codex" },
+    { "@type": "Thing", name: "Pi" },
+    { "@type": "Thing", name: "OpenCode" },
+    { "@type": "Thing", name: "Hermes Agent" },
     { "@type": "Thing", name: "Remote development" },
     { "@type": "SoftwareApplication", name: SITE_CONFIG.name },
   ],
@@ -46,6 +49,10 @@ const remoteOptions = [
     title: "SSH, mosh, or Screen Sharing",
     body: "Keep a universal fallback for terminal panes, visual permission dialogs, private networks, and workflows outside the native mobile surfaces.",
   },
+  {
+    title: "Harness web, RPC, or bot bridges",
+    body: "Pi, OpenCode, Hermes, and smaller harnesses can still work from a phone when you run the harness on the laptop and expose only a trusted web UI, RPC bridge, SSH session, or messaging bot.",
+  },
 ];
 
 const agentFlows = [
@@ -60,6 +67,10 @@ const agentFlows = [
   {
     title: "Build and test loops",
     body: "The same closed-lid reliability helps long-running tests, local servers, package downloads, and terminal sessions continue while you step away.",
+  },
+  {
+    title: "Other harnesses",
+    body: "Pi, OpenCode, Hermes, OpenHands, aider, Goose, and custom agent loops all share the same dependency: the host process has to keep running on the machine that owns the repo and tools.",
   },
 ];
 
@@ -90,6 +101,68 @@ const nativeControlOptions = [
   },
 ];
 
+const harnessOptions = [
+  {
+    eyebrow: "Pi",
+    title:
+      "Run the minimal harness locally; control it through your own bridge.",
+    body: "Pi is a small terminal coding harness with interactive, print/JSON, RPC, and SDK modes. It is intentionally composable, so phone control usually means tmux over SSH, Termux, Tailscale, or a purpose-built Telegram/RPC bridge.",
+    steps: [
+      "Run `pi` on the Mac in tmux or another session manager before you leave.",
+      "Arm OpenLid if the MacBook is the host that owns the repo and shell.",
+      "Use SSH, mosh, Termux, or a Pi RPC/SDK bridge to keep prompting from your phone.",
+      "Treat community bridges such as Telegram bots as remote access surfaces: allowlist users, keep tokens private, and avoid public listeners.",
+    ],
+    docsHref: "https://pi.dev/docs/latest",
+    extraHref:
+      "https://futurelab.studio/blog/telepi-telegram-remote-control-for-pi/",
+    extraLabel: "Example Telegram bridge",
+  },
+  {
+    eyebrow: "OpenCode",
+    title:
+      "Use OpenCode's web/server modes, then reach them over a private route.",
+    body: "OpenCode can run in the terminal, desktop, IDE, browser, or as a headless HTTP server. For phone control, keep the OpenCode process on the laptop and connect through the web UI, server API, VPN, Tailscale, or a mobile client that talks to that server.",
+    steps: [
+      "Start OpenCode on the host with `opencode web` for a browser UI or `opencode serve` for an HTTP API.",
+      "Bind carefully: prefer localhost plus a private tunnel/VPN over exposing the server directly.",
+      "Use a phone browser or trusted mobile client to inspect sessions, send prompts, and review output.",
+      "Keep OpenLid active so the laptop-hosted server does not vanish when the lid closes.",
+    ],
+    docsHref: "https://opencode.ai/docs/web/",
+    extraHref: "https://opencode.ai/docs/server/",
+    extraLabel: "Server API docs",
+  },
+  {
+    eyebrow: "Hermes Agent",
+    title: "Let messaging apps become the remote control surface.",
+    body: "Hermes is designed for persistent agent work and supports a messaging gateway for Telegram, Discord, Slack, WhatsApp, Signal, and more. It can also run through desktop, CLI, local, Docker, SSH, or cloud terminal backends.",
+    steps: [
+      "Decide whether Hermes should live on the laptop, a desktop, or an always-on server.",
+      "If it lives on the MacBook, use OpenLid to keep the local backend awake while closed.",
+      "Enable the Hermes messaging gateway for Telegram, Discord, Slack, or another approved channel.",
+      "Lock down user allowlists, bot tokens, and backend credentials before using it away from the desk.",
+    ],
+    docsHref:
+      "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/",
+    extraHref:
+      "https://hermes-agent.nousresearch.com/docs/user-guide/configuration",
+    extraLabel: "Terminal backend docs",
+  },
+  {
+    eyebrow: "Custom harnesses",
+    title: "The pattern is always the same: keep the host alive, expose less.",
+    body: "Whether the harness is OpenHands, aider, Goose, a shell script, or a small SDK loop, the phone should be a control surface. The trusted host should keep the repository, API keys, tools, browser state, and approvals.",
+    steps: [
+      "Run the harness in tmux, a service manager, or its own supervised process.",
+      "Use OpenLid when the trusted host is a closed MacBook.",
+      "Reach it through SSH, mosh, Screen Sharing, a VPN, or a narrow authenticated app-specific bridge.",
+      "Avoid unauthenticated public web servers, leaked bot tokens, and long-lived privileged shells.",
+    ],
+    docsHref: "",
+  },
+];
+
 const sourceLinks = [
   {
     title: "Codex remote connections",
@@ -100,6 +173,21 @@ const sourceLinks = [
     title: "Claude Code Remote Control",
     href: "https://docs.anthropic.com/en/docs/claude-code/remote-control",
     body: "Anthropic's setup path for continuing local Claude Code sessions from claude.ai/code or the Claude mobile app.",
+  },
+  {
+    title: "Pi documentation",
+    href: "https://pi.dev/docs/latest",
+    body: "Pi's terminal harness docs, including install paths and programmatic usage modes such as RPC and SDK.",
+  },
+  {
+    title: "OpenCode web and server modes",
+    href: "https://opencode.ai/docs/web/",
+    body: "OpenCode's browser UI and server model for driving sessions outside the local terminal.",
+  },
+  {
+    title: "Hermes messaging gateway",
+    href: "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/",
+    body: "Hermes' setup path for controlling an agent from Telegram, Discord, Slack, WhatsApp, Signal, and other messaging surfaces.",
   },
 ];
 ---
@@ -116,20 +204,28 @@ const sourceLinks = [
         >
         </div>
 
-        <div class="relative mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-20 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:pt-28">
+        <div
+          class="relative mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-20 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:pt-28"
+        >
           <div>
-            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+            <p
+              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
+            >
               Remote coding agents
             </p>
-            <h1 class="font-heading typography-heading mt-4 text-balance text-[2.6rem] leading-[1.02] tracking-[-0.03em] text-ploy-text-primary sm:text-6xl">
+            <h1
+              class="font-heading typography-heading mt-4 text-balance text-[2.6rem] leading-[1.02] tracking-[-0.03em] text-ploy-text-primary sm:text-6xl"
+            >
               Run the agent on your laptop. Steer it from your phone.
             </h1>
-            <p class="mt-6 max-w-2xl text-base leading-relaxed text-ploy-text-secondary sm:text-lg">
+            <p
+              class="mt-6 max-w-2xl text-base leading-relaxed text-ploy-text-secondary sm:text-lg"
+            >
               OpenLid keeps your Mac awake with the lid closed, so Claude Code,
-              Codex, local servers, builds, and test loops keep moving while you
-              walk away. Native Codex and Claude Code remote-control surfaces
-              can steer the session from your phone; OpenLid keeps the laptop
-              side alive.
+              Codex, Pi, OpenCode, Hermes, local servers, builds, and test loops
+              keep moving while you walk away. Native remote-control surfaces,
+              web UIs, SSH sessions, and messaging bots can steer the session
+              from your phone; OpenLid keeps the laptop side alive.
             </p>
 
             <div class="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -157,17 +253,28 @@ const sourceLinks = [
                 { kind: "prompt", text: "openlid on" },
                 { kind: "ok", text: "Active — preventing sleep now" },
                 { kind: "comment", text: "" },
-                { kind: "prompt", text: "claude --remote-control \"OpenLid\"" },
+                { kind: "prompt", text: 'claude --remote-control "OpenLid"' },
                 { kind: "out", text: "Session URL + QR code ready" },
-                { kind: "comment", text: "  // or: Codex App → Set up Codex mobile" },
+                {
+                  kind: "comment",
+                  text: "  // or: Codex App → Set up Codex mobile",
+                },
+                {
+                  kind: "comment",
+                  text: "  // or: tmux + pi / opencode / hermes",
+                },
               ]}
             />
             <Terminal
-              title="phone — native control"
+              title="phone — control surface"
               lines={[
                 { kind: "prompt", text: "open Claude app → Code" },
                 { kind: "prompt", text: "open ChatGPT app → Codex" },
-                { kind: "ok", text: "Approve, redirect, and review from phone" },
+                { kind: "prompt", text: "open SSH / Tailscale / Telegram" },
+                {
+                  kind: "ok",
+                  text: "Approve, redirect, and review from phone",
+                },
               ]}
             />
           </div>
@@ -177,21 +284,43 @@ const sourceLinks = [
       <section class="border-t border-white/[0.06]">
         <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
           <div class="max-w-2xl">
-            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+            <p
+              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
+            >
               The handoff
             </p>
-            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+            <h2
+              class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl"
+            >
               One Mac does the work. Your phone stays in control.
             </h2>
           </div>
 
-          <div class="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.06] lg:grid-cols-4">
+          <div
+            class="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.06] lg:grid-cols-4"
+          >
             {
               [
-                ["1", "Arm OpenLid", "Keep macOS awake before you close the lid."],
-                ["2", "Enable remote control", "Use Codex mobile setup or Claude Code Remote Control before you leave."],
-                ["3", "Close the lid", "The internal display can turn off while the local process keeps working."],
-                ["4", "Steer from phone", "Approve actions, answer questions, review output, or redirect the task."],
+                [
+                  "1",
+                  "Arm OpenLid",
+                  "Keep macOS awake before you close the lid.",
+                ],
+                [
+                  "2",
+                  "Enable remote control",
+                  "Use Codex mobile setup, Claude Code Remote Control, SSH, a web UI, or a messaging bridge before you leave.",
+                ],
+                [
+                  "3",
+                  "Close the lid",
+                  "The internal display can turn off while the local process keeps working.",
+                ],
+                [
+                  "4",
+                  "Steer from phone",
+                  "Approve actions, answer questions, review output, or redirect the task.",
+                ],
               ].map(([step, heading, body]) => (
                 <div class="bg-ploy-background-primary p-6">
                   <span class="font-mono text-sm text-ploy-accent-primary">
@@ -213,10 +342,14 @@ const sourceLinks = [
       <section class="border-t border-white/[0.06]">
         <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
           <div class="max-w-3xl">
-            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+            <p
+              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
+            >
               Native mobile control
             </p>
-            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+            <h2
+              class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl"
+            >
               You do not have to teach everyone SSH first.
             </h2>
             <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
@@ -263,7 +396,9 @@ const sourceLinks = [
             }
           </div>
 
-          <div class="mt-8 rounded-2xl border border-ploy-accent-primary/20 bg-ploy-accent-primary/[0.04] p-6">
+          <div
+            class="mt-8 rounded-2xl border border-ploy-accent-primary/20 bg-ploy-accent-primary/[0.04] p-6"
+          >
             <h3 class="text-base font-semibold text-ploy-text-primary">
               Where OpenLid fits
             </h3>
@@ -278,18 +413,113 @@ const sourceLinks = [
       </section>
 
       <section class="border-t border-white/[0.06]">
-        <div class="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr]">
+        <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+          <div class="max-w-3xl">
+            <p
+              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
+            >
+              Bring any harness
+            </p>
+            <h2
+              class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl"
+            >
+              Claude and Codex are not the whole market.
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
+              The same closed-lid problem shows up with every local harness.
+              Some products ship a first-party phone bridge. Others expose a web
+              server, RPC mode, SDK, messaging gateway, or nothing at all. The
+              shared requirement is still boring and physical: the host laptop
+              must remain awake, connected, and running the process.
+            </p>
+          </div>
+
+          <div class="mt-12 grid gap-5 lg:grid-cols-2">
+            {
+              harnessOptions.map((option) => (
+                <article class="rounded-2xl border border-white/[0.07] bg-white/[0.015] p-6 sm:p-7">
+                  <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+                    {option.eyebrow}
+                  </p>
+                  <h3 class="mt-3 text-xl font-semibold tracking-[-0.01em] text-ploy-text-primary">
+                    {option.title}
+                  </h3>
+                  <p class="mt-3 text-sm leading-relaxed text-ploy-text-secondary">
+                    {option.body}
+                  </p>
+                  <ol class="mt-6 space-y-3">
+                    {option.steps.map((step, index) => (
+                      <li class="flex gap-3 text-sm leading-relaxed text-ploy-text-secondary">
+                        <span class="mt-0.5 font-mono text-xs text-ploy-accent-primary">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  {option.docsHref && (
+                    <div class="mt-6 flex flex-wrap gap-x-5 gap-y-2">
+                      <a
+                        href={option.docsHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        class="inline-flex text-sm font-medium text-ploy-text-primary transition-colors hover:text-ploy-accent-primary"
+                      >
+                        Read setup docs
+                      </a>
+                      {option.extraHref && (
+                        <a
+                          href={option.extraHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          class="inline-flex text-sm font-medium text-ploy-text-secondary transition-colors hover:text-ploy-accent-primary"
+                        >
+                          {option.extraLabel}
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))
+            }
+          </div>
+
+          <div
+            class="mt-8 rounded-2xl border border-ploy-accent-primary/20 bg-ploy-accent-primary/[0.04] p-6"
+          >
+            <h3 class="text-base font-semibold text-ploy-text-primary">
+              If it can run in a terminal, it can use this pattern.
+            </h3>
+            <p class="mt-2 text-sm leading-relaxed text-ploy-text-secondary">
+              The phone does not need to become the development machine. It only
+              needs a safe way to send prompts, approve actions, inspect diffs,
+              and redirect work while the laptop remains the trusted execution
+              environment.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div
+          class="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr]"
+        >
           <div>
-            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+            <p
+              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
+            >
               Agent workflows
             </p>
-            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+            <h2
+              class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl"
+            >
               Built for long-running local work.
             </h2>
             <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
-              OpenLid does not replace Claude Code, Codex, ChatGPT mobile,
-              Claude mobile, SSH, or your remote terminal. It makes the laptop
-              reliable enough to host them after the lid closes.
+              OpenLid does not replace Claude Code, Codex, Pi, OpenCode, Hermes,
+              ChatGPT mobile, Claude mobile, SSH, or your remote terminal. It
+              makes the laptop reliable enough to host them after the lid
+              closes.
             </p>
           </div>
 
@@ -313,18 +543,23 @@ const sourceLinks = [
       <section class="border-t border-white/[0.06]">
         <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
           <div class="max-w-2xl">
-            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+            <p
+              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
+            >
               Remote access
             </p>
-            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+            <h2
+              class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl"
+            >
               Use native remote control first. Keep a fallback.
             </h2>
             <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
               OpenLid does not open ports, proxy traffic, or create a phone app.
               Use Codex and Claude Code's own remote-control flows when they fit
-              your account and workflow. Keep SSH, mosh, or Screen Sharing for
-              the cases where a terminal or visual desktop fallback is still the
-              right tool.
+              your account and workflow. For Pi, OpenCode, Hermes, and custom
+              harnesses, use the smallest bridge that works: SSH, mosh, Screen
+              Sharing, a private web UI, a messaging gateway, or an
+              authenticated mobile client.
             </p>
           </div>
 
@@ -343,7 +578,9 @@ const sourceLinks = [
             }
           </div>
 
-          <div class="mt-8 rounded-2xl border border-ploy-accent-primary/20 bg-ploy-accent-primary/[0.04] p-6">
+          <div
+            class="mt-8 rounded-2xl border border-ploy-accent-primary/20 bg-ploy-accent-primary/[0.04] p-6"
+          >
             <h3 class="text-base font-semibold text-ploy-text-primary">
               Security boundary
             </h3>
@@ -380,10 +617,14 @@ const sourceLinks = [
 
       <section class="border-t border-white/[0.06]">
         <div class="mx-auto max-w-2xl px-5 py-24 text-center sm:px-8">
-          <h2 class="font-heading typography-heading text-balance text-4xl tracking-[-0.03em] text-ploy-text-primary sm:text-5xl">
+          <h2
+            class="font-heading typography-heading text-balance text-4xl tracking-[-0.03em] text-ploy-text-primary sm:text-5xl"
+          >
             Start the agent. Close the lid. Keep moving.
           </h2>
-          <p class="mx-auto mt-5 max-w-lg text-base leading-relaxed text-ploy-text-secondary">
+          <p
+            class="mx-auto mt-5 max-w-lg text-base leading-relaxed text-ploy-text-secondary"
+          >
             OpenLid is the small piece that lets the rest of your mobile coding
             workflow stay alive on the machine that already has your repo,
             credentials, tools, and context.
