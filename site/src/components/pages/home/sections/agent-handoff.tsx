@@ -12,8 +12,9 @@ import { sitePath } from "@/lib/site-path";
  * @ployComponentStatus stable
  * @ployComponentDescription Homepage bridge to the coding agents use case:
  * OpenLid keeps the Mac awake while Claude Code, Codex, builds, and tests keep
- * running; the user's phone connects through their own trusted remote access
- * path. Keeps the claim precise and links to the full /coding-agents page.
+ * running; the user's phone connects through native Codex/Claude remote
+ * control or their own trusted fallback. Keeps the claim precise and links to
+ * the full /coding-agents page.
  */
 export function AgentHandoff() {
   return (
@@ -28,14 +29,15 @@ export function AgentHandoff() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-ploy-text-secondary">
             Start a coding harness on your Mac, arm OpenLid, close the lid, and
-            keep an eye on the session from your phone through SSH, Tailscale,
-            Screen Sharing, or your remote terminal of choice.
+            keep an eye on the session from your phone through Codex remote
+            connections, Claude Code Remote Control, SSH, Tailscale, Screen
+            Sharing, or your remote terminal of choice.
           </p>
 
           <div className="mt-7 grid gap-4 sm:grid-cols-3">
             {[
               { icon: Bot, label: "Agent runs on the Mac" },
-              { icon: Wifi, label: "Remote link stays reachable" },
+              { icon: Wifi, label: "Official mobile control stays reachable" },
               { icon: Smartphone, label: "Phone becomes the control surface" },
             ].map((item) => (
               <div key={item.label} className="border-l border-white/[0.08] pl-4">
@@ -77,9 +79,9 @@ export function AgentHandoff() {
           <Terminal
             title="phone — remote terminal"
             lines={[
-              { kind: "prompt", text: "ssh macbook.local" },
-              { kind: "prompt", text: "tmux attach -t codex" },
-              { kind: "ok", text: "Back in the same Codex session" },
+              { kind: "prompt", text: "open ChatGPT → Codex" },
+              { kind: "prompt", text: "open Claude app → Code" },
+              { kind: "ok", text: "Back in the local agent session" },
             ]}
           />
         </motion.div>
