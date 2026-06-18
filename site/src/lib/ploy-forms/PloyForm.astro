@@ -1,0 +1,74 @@
+---
+interface Props {
+  name: string;
+  successMessage?: string;
+  class?: string;
+}
+
+const {
+  name,
+  successMessage = "Thanks for your submission!",
+  class: className,
+} = Astro.props;
+---
+
+<form
+  data-ploy-form={name}
+  data-success-message={successMessage}
+  class={className}
+>
+  <slot />
+  <div class="ploy-form-success" aria-live="polite" hidden></div>
+  <div class="ploy-form-error" aria-live="polite" hidden></div>
+</form>
+
+<style>
+  .ploy-form-success {
+    color: var(--ploy-accent-primary);
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .ploy-form-error {
+    color: var(--destructive);
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+  }
+</style>
+
+<script>
+  import { submitForm } from "./submit-form";
+
+  document
+    .querySelectorAll<HTMLFormElement>("[data-ploy-form]")
+    .forEach((form) => {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const formName = form.dataset.ployForm!;
+        const successMessage = form.dataset.successMessage!;
+        const successDiv =
+          form.querySelector<HTMLElement>(".ploy-form-success")!;
+        const errorDiv = form.querySelector<HTMLElement>(".ploy-form-error")!;
+
+        successDiv.hidden = true;
+        errorDiv.hidden = true;
+
+        const formData = new FormData(form);
+        const data: Record<string, string> = {};
+        for (const [key, value] of formData.entries()) {
+          if (typeof value === "string") data[key] = value;
+        }
+
+        try {
+          await submitForm(formName, data);
+          successDiv.textContent = successMessage;
+          successDiv.hidden = false;
+          form.reset();
+        } catch (err) {
+          errorDiv.textContent =
+            err instanceof Error ? err.message : "Something went wrong.";
+          errorDiv.hidden = false;
+        }
+      });
+    });
+</script>

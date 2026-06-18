@@ -1,0 +1,117 @@
+---
+import "../styles/globals.css";
+import { STARTER_VERSION } from "../starter-version";
+import { SEO } from "@/components/seo";
+import { SITE_CONFIG } from "@/site-config";
+import type { SeoJsonSchema } from "@/components/seo-json";
+import type { Organization, WithContext } from "schema-dts";
+
+interface Props {
+  title?: string;
+  description?: string;
+  canonical?: string | URL;
+  image?: string | URL;
+  imageAlt?: string;
+  noindex?: boolean;
+  type?: "website" | "article";
+  siteName?: string;
+  jsonLd?: SeoJsonSchema | SeoJsonSchema[];
+}
+
+const {
+  title = SITE_CONFIG.name,
+  description = SITE_CONFIG.description,
+  canonical,
+  image = SITE_CONFIG.ogImage,
+  imageAlt = `${SITE_CONFIG.name} — keep your laptop awake, even with the lid closed`,
+  noindex = false,
+  type = "website",
+  siteName = SITE_CONFIG.name,
+  jsonLd,
+} = Astro.props;
+
+const site = Astro.site;
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const withBase = (path: string) => {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+
+  if (!basePath || normalized === basePath || normalized.startsWith(`${basePath}/`)) {
+    return normalized;
+  }
+
+  return `${basePath}${normalized}`;
+};
+
+const resolveUrl = (value?: string | URL) => {
+  if (!value) return undefined;
+  if (value instanceof URL) return value.toString();
+  if (/^[a-z][a-z\d+.-]*:/i.test(value)) return value;
+
+  const pathname = value.startsWith("/") ? withBase(value) : value;
+  if (site) return new URL(pathname, site).toString();
+  return pathname;
+};
+
+const canonicalUrl =
+  resolveUrl(canonical) ??
+  (site ? new URL(withBase(Astro.url.pathname), site).toString() : undefined);
+const imageUrl = resolveUrl(image);
+const siteRootUrl = site ? new URL(withBase("/"), site).href : undefined;
+
+// Site-wide Organization schema (logo + repo) merged with any page-level
+// schemas. SEO dedupes by @type, so this richer Organization replaces the
+// minimal default on every page.
+const organizationJsonLd: WithContext<Organization> = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: SITE_CONFIG.name,
+  description: SITE_CONFIG.description,
+  ...(siteRootUrl && { url: siteRootUrl }),
+  ...(site && { logo: new URL(withBase("/icon-512.png"), site).href }),
+  sameAs: [SITE_CONFIG.repoUrl],
+};
+
+const pageJsonLd = jsonLd
+  ? Array.isArray(jsonLd)
+    ? jsonLd
+    : [jsonLd]
+  : [];
+const mergedJsonLd = [organizationJsonLd, ...pageJsonLd];
+---
+
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href={withBase("/favicon.ico")} sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href={withBase("/favicon-32.png")} />
+    <link rel="icon" type="image/png" sizes="16x16" href={withBase("/favicon-16.png")} />
+    <link rel="apple-touch-icon" sizes="180x180" href={withBase("/apple-touch-icon.png")} />
+    <meta name="theme-color" content="#0c0d0e" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="ploy-astro-starter-version" content={STARTER_VERSION} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <SEO
+      title={title}
+      description={description}
+      canonicalUrl={canonicalUrl}
+      imageUrl={imageUrl}
+      imageAlt={imageAlt}
+      noindex={noindex}
+      type={type}
+      siteName={siteName}
+      jsonLd={mergedJsonLd}
+    />
+    <slot name="head" />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

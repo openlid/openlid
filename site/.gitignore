@@ -1,0 +1,37 @@
+# build output
+dist/
+
+# generated types
+.astro/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# environment variables
+.env
+.env.local
+.env.staging
+.env.production
+.dev.vars
+
+# cloudflare
+.wrangler
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
+
+# Ploy discouraged files
+wrangler.toml
+logs/
+lost+found/
+.ploy/
+ploy.astro.config.mjs

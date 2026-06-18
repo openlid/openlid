@@ -1,0 +1,274 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { Footer } from "@/components/sections/footer";
+import { Navbar } from "@/components/sections/navbar";
+import { Terminal } from "@/components/ui/terminal";
+import { SITE_CONFIG } from "@/site-config";
+import { sitePath } from "@/lib/site-path";
+import type { TechArticle, WithContext } from "schema-dts";
+
+export const prerender = true;
+
+const title = "Run Claude Code and Codex while your MacBook is closed";
+const description =
+  "Use OpenLid to keep Claude Code, Codex, builds, tests, and remote terminal sessions running on your laptop while you monitor and steer them from your phone.";
+
+const canonicalUrl = Astro.site
+  ? new URL(sitePath("/coding-agents"), Astro.site).toString()
+  : undefined;
+
+const jsonLd: WithContext<TechArticle> = {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: title,
+  name: title,
+  description,
+  ...(canonicalUrl && { url: canonicalUrl, mainEntityOfPage: canonicalUrl }),
+  about: [
+    { "@type": "Thing", name: "Claude Code" },
+    { "@type": "Thing", name: "Codex" },
+    { "@type": "Thing", name: "Remote development" },
+    { "@type": "SoftwareApplication", name: SITE_CONFIG.name },
+  ],
+};
+
+const remoteOptions = [
+  {
+    title: "SSH or mosh",
+    body: "The simplest phone workflow: connect to your Mac, attach tmux, and keep driving the same Claude Code or Codex session.",
+  },
+  {
+    title: "Tailscale or WireGuard",
+    body: "A private network keeps the laptop reachable without exposing random ports to the public internet.",
+  },
+  {
+    title: "Screen Sharing or VNC",
+    body: "Useful when the agent flow needs a browser, permission dialog, or visual inspection on the laptop.",
+  },
+];
+
+const agentFlows = [
+  {
+    title: "Claude Code",
+    body: "Start Claude Code in a tmux pane before you leave, then reconnect from your phone to approve steps, review output, or redirect the task.",
+  },
+  {
+    title: "Codex",
+    body: "Run Codex against the local repo while the Mac stays awake. The phone becomes a lightweight check-in surface instead of the machine doing the work.",
+  },
+  {
+    title: "Build and test loops",
+    body: "Long builds, integration tests, package downloads, and local servers keep running after the lid closes.",
+  },
+];
+---
+
+<Layout title={title} description={description} jsonLd={jsonLd}>
+  <div class="min-h-screen bg-ploy-background-primary text-ploy-text-primary">
+    <Navbar client:load />
+
+    <main>
+      <section class="relative overflow-hidden">
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-x-0 top-[-12%] mx-auto h-[560px] max-w-4xl rounded-full bg-ploy-accent-primary/[0.07] blur-[120px]"
+        >
+        </div>
+
+        <div class="relative mx-auto grid max-w-6xl gap-12 px-5 pb-20 pt-20 sm:px-8 lg:grid-cols-[0.95fr_1.05fr] lg:pt-28">
+          <div>
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              Remote coding agents
+            </p>
+            <h1 class="font-heading typography-heading mt-4 text-balance text-[2.6rem] leading-[1.02] tracking-[-0.03em] text-ploy-text-primary sm:text-6xl">
+              Run the agent on your laptop. Steer it from your phone.
+            </h1>
+            <p class="mt-6 max-w-2xl text-base leading-relaxed text-ploy-text-secondary sm:text-lg">
+              OpenLid keeps your Mac awake with the lid closed, so Claude Code,
+              Codex, local servers, builds, and test loops keep moving while you
+              walk away. Your phone connects through your existing remote access
+              path; OpenLid keeps the laptop side alive.
+            </p>
+
+            <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a
+                href="https://github.com/openlid/openlid/releases/latest"
+                target="_blank"
+                rel="noreferrer"
+                class="inline-flex h-12 items-center justify-center rounded-md bg-ploy-neutral-inverse px-6 font-button text-base font-medium text-ploy-text-on-accent-primary transition-colors hover:bg-ploy-neutral-inverse/90"
+              >
+                Download OpenLid
+              </a>
+              <a
+                href={sitePath("/")}
+                class="inline-flex h-12 items-center justify-center rounded-md border border-ploy-button-secondary-border bg-white/[0.02] px-6 font-button text-base font-medium text-ploy-text-primary transition-colors hover:bg-white/[0.06]"
+              >
+                Back to overview
+              </a>
+            </div>
+          </div>
+
+          <div class="grid content-start gap-4">
+            <Terminal
+              title="macbook — coding harness"
+              lines={[
+                { kind: "prompt", text: "openlid on" },
+                { kind: "ok", text: "Active — preventing sleep now" },
+                { kind: "comment", text: "" },
+                { kind: "prompt", text: "tmux new -s claude" },
+                { kind: "prompt", text: "claude" },
+                { kind: "out", text: "Working in /Users/you/project" },
+                { kind: "comment", text: "  // close the lid, leave the desk" },
+              ]}
+            />
+            <Terminal
+              title="phone — remote check-in"
+              lines={[
+                { kind: "prompt", text: "ssh macbook.local" },
+                { kind: "prompt", text: "tmux attach -t claude" },
+                { kind: "ok", text: "Claude Code session restored" },
+              ]}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+          <div class="max-w-2xl">
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              The handoff
+            </p>
+            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+              One Mac does the work. Your phone stays in control.
+            </h2>
+          </div>
+
+          <div class="mt-12 grid gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.06] lg:grid-cols-4">
+            {
+              [
+                ["1", "Arm OpenLid", "Keep macOS awake before you close the lid."],
+                ["2", "Start the harness", "Run Claude Code, Codex, tests, or a local server in tmux."],
+                ["3", "Close the lid", "The internal display can turn off while the system keeps working."],
+                ["4", "Reconnect from phone", "SSH, mosh, Tailscale, or Screen Sharing brings you back to the same session."],
+              ].map(([step, heading, body]) => (
+                <div class="bg-ploy-background-primary p-6">
+                  <span class="font-mono text-sm text-ploy-accent-primary">
+                    {step}
+                  </span>
+                  <h3 class="mt-4 text-base font-semibold text-ploy-text-primary">
+                    {heading}
+                  </h3>
+                  <p class="mt-2 text-sm leading-relaxed text-ploy-text-secondary">
+                    {body}
+                  </p>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <div>
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              Agent workflows
+            </p>
+            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+              Built for long-running local work.
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
+              OpenLid does not replace Claude Code, Codex, SSH, or your remote
+              terminal. It makes the laptop reliable enough to host them after
+              the lid closes.
+            </p>
+          </div>
+
+          <div class="grid gap-4">
+            {
+              agentFlows.map((flow) => (
+                <div class="rounded-2xl border border-white/[0.07] bg-white/[0.015] p-6">
+                  <h3 class="text-lg font-semibold text-ploy-text-primary">
+                    {flow.title}
+                  </h3>
+                  <p class="mt-2 text-sm leading-relaxed text-ploy-text-secondary">
+                    {flow.body}
+                  </p>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
+          <div class="max-w-2xl">
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              Remote access
+            </p>
+            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+              Use the remote channel you already trust.
+            </h2>
+            <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
+              OpenLid does not open ports, proxy traffic, or create a phone app.
+              Keep your remote access boring and locked down; OpenLid handles
+              the closed-lid sleep problem underneath it.
+            </p>
+          </div>
+
+          <div class="mt-12 grid gap-5 md:grid-cols-3">
+            {
+              remoteOptions.map((option) => (
+                <div class="rounded-2xl border border-white/[0.07] bg-white/[0.015] p-6">
+                  <h3 class="text-base font-semibold text-ploy-text-primary">
+                    {option.title}
+                  </h3>
+                  <p class="mt-3 text-sm leading-relaxed text-ploy-text-secondary">
+                    {option.body}
+                  </p>
+                </div>
+              ))
+            }
+          </div>
+
+          <div class="mt-8 rounded-2xl border border-ploy-accent-primary/20 bg-ploy-accent-primary/[0.04] p-6">
+            <h3 class="text-base font-semibold text-ploy-text-primary">
+              Security boundary
+            </h3>
+            <p class="mt-2 text-sm leading-relaxed text-ploy-text-secondary">
+              Treat remote access as a separate security decision: prefer private
+              networks, key-based SSH, device locks, and short-lived sessions.
+              OpenLid keeps the laptop awake; it does not make remote access
+              public by itself.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto max-w-2xl px-5 py-24 text-center sm:px-8">
+          <h2 class="font-heading typography-heading text-balance text-4xl tracking-[-0.03em] text-ploy-text-primary sm:text-5xl">
+            Start the agent. Close the lid. Keep moving.
+          </h2>
+          <p class="mx-auto mt-5 max-w-lg text-base leading-relaxed text-ploy-text-secondary">
+            OpenLid is the small piece that lets the rest of your mobile coding
+            workflow stay alive on the machine that already has your repo,
+            credentials, tools, and context.
+          </p>
+          <a
+            href="https://github.com/openlid/openlid/releases/latest"
+            target="_blank"
+            rel="noreferrer"
+            class="mt-8 inline-flex h-12 items-center justify-center rounded-md bg-ploy-neutral-inverse px-6 font-button text-base font-medium text-ploy-text-on-accent-primary transition-colors hover:bg-ploy-neutral-inverse/90"
+          >
+            Download OpenLid
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <Footer />
+  </div>
+</Layout>

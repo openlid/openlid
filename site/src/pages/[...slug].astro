@@ -1,0 +1,52 @@
+---
+import { render, type CollectionEntry } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+import { getPublishedPages } from "@/lib/content";
+import type { Article, WithContext } from "schema-dts";
+
+interface Props {
+  entry: CollectionEntry<"pages">;
+}
+
+const pagePathForEntry = (entry: CollectionEntry<"pages">) =>
+  entry.data.slug ?? entry.id.replace(/\/index$/, "");
+
+export async function getStaticPaths() {
+  const pages = await getPublishedPages();
+
+  return pages.map((entry) => ({
+    params: { slug: pagePathForEntry(entry) },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props as Props;
+const { Content } = await render(entry);
+const canonicalUrl = Astro.site
+  ? new URL(Astro.url.pathname, Astro.site).toString()
+  : undefined;
+const articleJsonLd: WithContext<Article> = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: entry.data.title,
+  name: entry.data.title,
+  ...(entry.data.description && { description: entry.data.description }),
+  datePublished: entry.data.pubDate.toISOString(),
+  dateModified: entry.data.pubDate.toISOString(),
+  ...(canonicalUrl && {
+    url: canonicalUrl,
+    mainEntityOfPage: canonicalUrl,
+  }),
+};
+---
+
+<Layout
+  title={entry.data.title}
+  description={entry.data.description}
+  type="article"
+  jsonLd={articleJsonLd}
+>
+  <article class="prose mx-auto max-w-3xl px-4 py-12">
+    <Content />
+  </article>
+</Layout>

@@ -1,0 +1,41 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { HomePage } from "@/components/pages/home/page";
+import { SITE_CONFIG } from "@/site-config";
+import type { SoftwareApplication, WithContext } from "schema-dts";
+
+export const prerender = true;
+
+const siteRootUrl = Astro.site
+  ? new URL(import.meta.env.BASE_URL, Astro.site).href
+  : undefined;
+
+// SoftwareApplication schema — strong AEO/GEO signal: names the app, OS, price
+// (free), license, and download. Matches the visible product content.
+const softwareJsonLd: WithContext<SoftwareApplication> = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: SITE_CONFIG.name,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "macOS 13+ (Apple Silicon)",
+  softwareVersion: "2.3.2",
+  description: SITE_CONFIG.description,
+  ...(siteRootUrl && { url: siteRootUrl }),
+  downloadUrl: `${SITE_CONFIG.repoUrl}/releases/latest`,
+  license: "https://www.apache.org/licenses/LICENSE-2.0",
+  isAccessibleForFree: true,
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+};
+---
+
+<Layout
+  title="OpenLid — Keep your laptop awake, lid closed"
+  description={SITE_CONFIG.description}
+  jsonLd={softwareJsonLd}
+>
+  <HomePage client:load />
+</Layout>
