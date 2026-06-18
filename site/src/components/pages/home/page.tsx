@@ -5,6 +5,7 @@ import { Hero } from "./sections/hero";
 import { Scenarios } from "./sections/scenarios";
 import { Features } from "./sections/features";
 import { AgentHandoff } from "./sections/agent-handoff";
+import { OriginStory } from "./sections/origin-story";
 import { Cli } from "./sections/cli";
 import { Privacy } from "./sections/privacy";
 import { Roadmap } from "./sections/roadmap";
@@ -22,8 +23,9 @@ import { FinalCta } from "./sections/final-cta";
  * @ployComponentStatus stable
  * @ployComponentDescription OpenLid launch homepage shell. Composes the shared
  * Navbar + Footer with the home sections in order: Hero, Scenarios, Features,
- * Cli, Privacy, Roadmap, InstallMethods, LoginItemsApproval, UpdateUninstall,
- * Faq, FinalCta. Wrapped in MotionConfig (reducedMotion="user")
+ * AgentHandoff, OriginStory, Cli, Privacy, Roadmap, InstallMethods,
+ * LoginItemsApproval, UpdateUninstall, Faq, FinalCta. Wrapped in MotionConfig
+ * (reducedMotion="user")
  * so scroll/mount animations respect accessibility. Dark monochrome theme with a
  * single icy-blue accent.
  */
@@ -37,6 +39,7 @@ export function HomePage() {
           <Scenarios />
           <Features />
           <AgentHandoff />
+          <OriginStory />
           <Cli />
           <Privacy />
           <Roadmap />

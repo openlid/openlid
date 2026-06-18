@@ -1,0 +1,232 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { Footer } from "@/components/sections/footer";
+import { Navbar } from "@/components/sections/navbar";
+import { Terminal } from "@/components/ui/terminal";
+import { sitePath } from "@/lib/site-path";
+import { SITE_CONFIG } from "@/site-config";
+import type { Article, WithContext } from "schema-dts";
+
+export const prerender = true;
+
+const title = "How OpenLid started";
+const description =
+  "The OpenLid origin story: a meme about coding agents, one half-open laptop, and a small macOS utility built to keep local agent work alive.";
+const memeSrc = sitePath("/openlid-origin-meme.jpg");
+const memeAlt =
+  "Meme screenshot titled software engineers before vs after agents, showing a laptop fully closed before agents and partly open after agents.";
+
+const canonicalUrl = Astro.site
+  ? new URL(sitePath("/story"), Astro.site).toString()
+  : undefined;
+
+const jsonLd: WithContext<Article> = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: title,
+  name: title,
+  description,
+  ...(canonicalUrl && { url: canonicalUrl, mainEntityOfPage: canonicalUrl }),
+  about: [
+    { "@type": "SoftwareApplication", name: SITE_CONFIG.name },
+    { "@type": "Thing", name: "Coding agents" },
+    { "@type": "Thing", name: "Closed-lid laptop workflows" },
+  ],
+};
+
+const timeline = [
+  {
+    label: "The joke",
+    title: "Agents made one old laptop rule feel newly wrong.",
+    body: "The meme landed because it was true: once an agent is running, closing the laptop is no longer the end of the work. The machine still has the repo, credentials, terminal sessions, local servers, and context.",
+  },
+  {
+    label: "The first need",
+    title: "Keep the local harness alive while stepping away.",
+    body: "Claude Code, Codex, builds, tests, downloads, and remote terminals all want the same boring guarantee: the Mac should stay awake when the lid closes, without disabling sleep forever.",
+  },
+  {
+    label: "The product shape",
+    title: "A tiny native utility, not a new workflow platform.",
+    body: "OpenLid became a menu bar app and CLI around one job: prevent sleep precisely, show the state clearly, and get out of the way. Remote access stays yours; OpenLid keeps the laptop side alive.",
+  },
+  {
+    label: "The guardrails",
+    title: "Useful on the go, careful with the machine.",
+    body: "Schedules, battery thresholds, transit safeguards, signed releases, and zero telemetry turned the idea from a quick workaround into a utility people could leave running with confidence.",
+  },
+];
+---
+
+<Layout
+  title={title}
+  description={description}
+  image={memeSrc}
+  imageAlt={memeAlt}
+  type="article"
+  jsonLd={jsonLd}
+>
+  <div class="min-h-screen bg-ploy-background-primary text-ploy-text-primary">
+    <Navbar client:load />
+
+    <main>
+      <section class="relative overflow-hidden">
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-x-0 top-[-16%] mx-auto h-[620px] max-w-4xl rounded-full bg-ploy-accent-primary/[0.07] blur-[120px]"
+        >
+        </div>
+
+        <div class="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:pt-28">
+          <div>
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              Origin story
+            </p>
+            <h1 class="font-heading typography-heading mt-4 text-balance text-[2.6rem] leading-[1.02] tracking-[-0.03em] text-ploy-text-primary sm:text-6xl">
+              It started with one half-open laptop.
+            </h1>
+            <p class="mt-6 max-w-2xl text-base leading-relaxed text-ploy-text-secondary sm:text-lg">
+              A meme about software engineers before and after coding agents
+              captured a real shift: the laptop is no longer just a screen. It is
+              the place where long-running local agents, builds, tests, and
+              remote sessions keep working after you walk away.
+            </p>
+            <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a
+                href={sitePath("/coding-agents")}
+                class="inline-flex h-12 items-center justify-center rounded-md bg-ploy-neutral-inverse px-6 font-button text-base font-medium text-ploy-text-on-accent-primary transition-colors hover:bg-ploy-neutral-inverse/90"
+              >
+                See the agent workflow
+              </a>
+              <a
+                href={sitePath("/")}
+                class="inline-flex h-12 items-center justify-center rounded-md border border-ploy-button-secondary-border bg-white/[0.02] px-6 font-button text-base font-medium text-ploy-text-primary transition-colors hover:bg-white/[0.06]"
+              >
+                Back to overview
+              </a>
+            </div>
+          </div>
+
+          <figure class="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3 shadow-2xl shadow-black/40">
+            <img
+              src={memeSrc}
+              width="800"
+              height="717"
+              alt={memeAlt}
+              class="aspect-[800/717] w-full rounded-xl object-cover"
+              loading="eager"
+              decoding="async"
+            />
+            <figcaption class="px-2 pb-1 pt-4 text-sm leading-relaxed text-ploy-text-secondary">
+              The meme that made the problem obvious: agents keep working after
+              the screen stops being the point.
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.72fr_1.28fr]">
+          <div>
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              What changed
+            </p>
+            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+              Before agents, closing the lid was normal. After agents, it became
+              an interruption.
+            </h2>
+          </div>
+
+          <div class="grid gap-5">
+            {
+              timeline.map((item) => (
+                <article class="grid gap-4 border-t border-white/[0.07] pt-5 sm:grid-cols-[8.5rem_1fr]">
+                  <p class="font-mono text-sm text-ploy-accent-primary">
+                    {item.label}
+                  </p>
+                  <div>
+                    <h3 class="text-lg font-semibold text-ploy-text-primary">
+                      {item.title}
+                    </h3>
+                    <p class="mt-2 text-sm leading-relaxed text-ploy-text-secondary">
+                      {item.body}
+                    </p>
+                  </div>
+                </article>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto grid max-w-6xl items-start gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <div>
+            <p class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">
+              How it developed
+            </p>
+            <h2 class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">
+              The useful version stayed small.
+            </h2>
+            <div class="mt-6 space-y-5 text-base leading-relaxed text-ploy-text-secondary">
+              <p>
+                The tempting answer would have been a bigger remote-coding
+                system. The better answer was narrower: make the Mac reliable as
+                the machine running the work, then let developers keep using the
+                remote tools they already trust.
+              </p>
+              <p>
+                That shaped OpenLid into a native menu bar app with a first-class
+                CLI. One click or one command can arm sleep prevention; schedules
+                keep it scoped to working hours; safeguards turn it off when the
+                battery or travel context says the laptop should sleep.
+              </p>
+              <p>
+                The result is deliberately boring infrastructure for an
+                increasingly normal habit: start a local coding harness, close
+                the laptop, and check in later from a phone without killing the
+                session.
+              </p>
+            </div>
+          </div>
+
+          <Terminal
+            title="the original shape"
+            lines={[
+              { kind: "comment", text: "  // keep the idea smaller than the meme" },
+              { kind: "prompt", text: "openlid on" },
+              { kind: "ok", text: "Active — preventing sleep now" },
+              { kind: "comment", text: "" },
+              { kind: "prompt", text: "tmux new -s codex" },
+              { kind: "prompt", text: "codex" },
+              { kind: "out", text: "Local agent running on the laptop" },
+              { kind: "comment", text: "  // phone reconnects later; Mac stays awake" },
+            ]}
+          />
+        </div>
+      </section>
+
+      <section class="border-t border-white/[0.06]">
+        <div class="mx-auto max-w-2xl px-5 py-24 text-center sm:px-8">
+          <h2 class="font-heading typography-heading text-balance text-4xl tracking-[-0.03em] text-ploy-text-primary sm:text-5xl">
+            OpenLid exists for that half-open moment.
+          </h2>
+          <p class="mx-auto mt-5 max-w-lg text-base leading-relaxed text-ploy-text-secondary">
+            The lid can close. The screen can stop being useful. The work can
+            keep running on the laptop that already has everything it needs.
+          </p>
+          <a
+            href="https://github.com/openlid/openlid/releases/latest"
+            target="_blank"
+            rel="noreferrer"
+            class="mt-8 inline-flex h-12 items-center justify-center rounded-md bg-ploy-neutral-inverse px-6 font-button text-base font-medium text-ploy-text-on-accent-primary transition-colors hover:bg-ploy-neutral-inverse/90"
+          >
+            Download OpenLid
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <Footer />
+  </div>
+</Layout>

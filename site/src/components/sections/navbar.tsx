@@ -25,6 +25,7 @@ const DEFAULT_LINKS: NavLink[] = [
   { label: "Features", href: sitePath("/#features") },
   { label: "CLI", href: sitePath("/#cli") },
   { label: "Coding agents", href: sitePath("/coding-agents") },
+  { label: "Story", href: sitePath("/story") },
   { label: "Privacy", href: sitePath("/#privacy") },
   { label: "Roadmap", href: sitePath("/#roadmap") },
 ];
@@ -45,11 +46,11 @@ export function Navbar({
   return (
     <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-ploy-background-primary/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-5 sm:px-8">
-        <a href="#top" className="shrink-0" aria-label="OpenLid home">
+        <a href={sitePath("/")} className="shrink-0" aria-label="OpenLid home">
           <Wordmark />
         </a>
 
-        <div className="hidden items-center gap-8 md:flex">
+        <div className="hidden items-center gap-6 md:flex">
           {links.map((l) => (
             <a
               key={l.href}
