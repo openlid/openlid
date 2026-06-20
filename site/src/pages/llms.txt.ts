@@ -59,7 +59,10 @@ export const GET: APIRoute = async ({ site }) => {
     "",
     "## Core Pages",
     "",
-    `- [Home](${new URL(withBase("/"), origin).href}): Primary overview of the site.`,
+    `- [Home](${new URL(withBase("/"), origin).href}): Primary overview of OpenLid — what it does and how to get it.`,
+    `- [Install](${new URL(withBase("/install"), origin).href}): Install via Homebrew, the signed DMG, or source; the one-time Login Items approval; and clean update/uninstall steps.`,
+    `- [Coding agents](${new URL(withBase("/coding-agents"), origin).href}): Keep Claude Code, Codex, and other local harnesses running on a closed MacBook while you steer them from your phone.`,
+    `- [Story](${new URL(withBase("/story"), origin).href}): The origin story — how a meme about the post-agent laptop era became a small macOS utility.`,
     "",
     ...(contentLinks.length > 0
       ? ["## Public Content", "", ...contentLinks, ""]

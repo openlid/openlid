@@ -1,5 +1,5 @@
 // @ts-check
-import { defineConfig } from "astro/config";
+import { defineConfig, fontProviders } from "astro/config";
 import tailwindcss from "@tailwindcss/vite";
 import mdx from "@astrojs/mdx";
 import react from "@astrojs/react";
@@ -25,6 +25,40 @@ export default defineConfig({
   build: {
     assets: "_astro",
   },
+  // Self-hosted fonts: Astro downloads these at build time and serves them from
+  // this origin, so a visitor's browser never calls Google Fonts (keeps the
+  // "no telemetry / nothing leaves your machine" promise true for the site
+  // itself) and there's no render-blocking third-party request. Only the
+  // weights actually used in the design are fetched.
+  fonts: [
+    {
+      provider: fontProviders.google(),
+      name: "Inter",
+      cssVariable: "--font-inter",
+      weights: [400, 500, 600],
+      styles: ["normal"],
+      subsets: ["latin"],
+      fallbacks: ["system-ui", "sans-serif"],
+    },
+    {
+      provider: fontProviders.google(),
+      name: "Manrope",
+      cssVariable: "--font-manrope",
+      weights: [500, 600, 700, 800],
+      styles: ["normal"],
+      subsets: ["latin"],
+      fallbacks: ["system-ui", "sans-serif"],
+    },
+    {
+      provider: fontProviders.google(),
+      name: "IBM Plex Mono",
+      cssVariable: "--font-ibm-plex-mono",
+      weights: [400, 500],
+      styles: ["normal"],
+      subsets: ["latin"],
+      fallbacks: ["ui-monospace", "monospace"],
+    },
+  ],
   integrations: [
     mdx(),
     react(),

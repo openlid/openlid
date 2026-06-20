@@ -1,8 +1,9 @@
 import { motion } from "motion/react";
-import { Apple } from "lucide-react";
+import { AppleMark } from "@/components/ui/apple-mark";
 import { Button } from "@/components/ui/button";
 import { GitHubMark } from "@/components/ui/github-mark";
 import { Terminal } from "../components/terminal";
+import { sitePath } from "@/lib/site-path";
 
 /**
  * @ployComponent
@@ -46,7 +47,7 @@ export function FinalCta({
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Button asChild size="lg" className="w-full sm:w-auto">
             <a href={downloadUrl} target="_blank" rel="noreferrer">
-              <Apple className="size-[1.15em]" />
+              <AppleMark className="size-[1.15em]" />
               Download for macOS
             </a>
           </Button>
@@ -65,6 +66,16 @@ export function FinalCta({
             ]}
           />
         </div>
+
+        <p className="mt-5 text-sm text-ploy-text-secondary">
+          Prefer the DMG or building from source?{" "}
+          <a
+            href={sitePath("/install")}
+            className="font-medium text-ploy-text-primary underline-offset-4 transition-colors hover:text-ploy-accent-primary hover:underline"
+          >
+            See all install options
+          </a>
+        </p>
       </div>
     </section>
   );

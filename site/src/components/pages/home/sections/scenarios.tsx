@@ -16,7 +16,7 @@ import { MenuBarCard } from "../components/menu-bar-card";
  */
 export function Scenarios() {
   return (
-    <section className="border-t border-white/[0.06] bg-ploy-background-primary">
+    <section className="border-t border-white/[0.06] bg-ploy-background-secondary">
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-8">
         <div className="max-w-2xl">
           <h2 className="font-heading typography-heading text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl">

@@ -1,8 +1,8 @@
 import { motion } from "motion/react";
-import { Apple } from "lucide-react";
+import { AppleMark } from "@/components/ui/apple-mark";
 import { Button } from "@/components/ui/button";
 import { GitHubMark } from "@/components/ui/github-mark";
-import { MenuBarCard } from "../components/menu-bar-card";
+import { MenuBarScene } from "../components/menu-bar-scene";
 import { Terminal } from "../components/terminal";
 
 /**
@@ -28,14 +28,12 @@ const DEFAULT_PROOF = [
 
 export function Hero({
   headline = "Keep your laptop awake.",
-  headlineAccent = "Even with the lid closed.",
   subcopy = "OpenLid is a tiny menu bar utility that stops macOS from sleeping when you close the lid — so builds, coding agents, downloads, and remote sessions keep running while you walk away.",
   downloadUrl = "https://github.com/openlid/openlid/releases/latest",
   repoUrl = "https://github.com/openlid/openlid",
   proof = DEFAULT_PROOF,
 }: {
   headline?: string;
-  headlineAccent?: string;
   subcopy?: string;
   downloadUrl?: string;
   repoUrl?: string;
@@ -74,7 +72,10 @@ export function Hero({
           className="font-heading typography-heading mt-7 text-[2.6rem] leading-[1.02] tracking-[-0.03em] text-ploy-text-primary sm:text-6xl lg:text-7xl"
         >
           {headline}
-          <span className="block text-ploy-text-secondary">{headlineAccent}</span>
+          <span className="block">
+            Even with the{" "}
+            <span className="text-ploy-accent-primary">lid closed.</span>
+          </span>
         </motion.h1>
 
         <motion.p
@@ -94,7 +95,7 @@ export function Hero({
         >
           <Button asChild size="lg" className="w-full sm:w-auto">
             <a href={downloadUrl} target="_blank" rel="noreferrer">
-              <Apple className="size-[1.15em]" />
+              <AppleMark className="size-[1.15em]" />
               Download for macOS
             </a>
           </Button>
@@ -154,7 +155,7 @@ export function Hero({
             aria-hidden
             className="pointer-events-none absolute inset-x-0 bottom-[-20%] mx-auto h-72 max-w-2xl rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(143,179,217,0.12),transparent_70%)] blur-2xl"
           />
-          <MenuBarCard className="relative" />
+          <MenuBarScene className="relative max-w-3xl" />
         </motion.div>
       </div>
     </section>

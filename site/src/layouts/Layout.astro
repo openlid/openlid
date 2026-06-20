@@ -1,5 +1,6 @@
 ---
 import "../styles/globals.css";
+import { Font } from "astro:assets";
 import { STARTER_VERSION } from "../starter-version";
 import { SEO } from "@/components/seo";
 import { SITE_CONFIG } from "@/site-config";
@@ -94,12 +95,9 @@ const mergedJsonLd = [organizationJsonLd, ...pageJsonLd];
     <meta name="theme-color" content="#0c0d0e" />
     <meta name="generator" content={Astro.generator} />
     <meta name="ploy-astro-starter-version" content={STARTER_VERSION} />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <Font cssVariable="--font-inter" />
+    <Font cssVariable="--font-manrope" />
+    <Font cssVariable="--font-ibm-plex-mono" />
     <SEO
       title={title}
       description={description}

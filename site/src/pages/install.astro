@@ -1,0 +1,50 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { InstallPage } from "@/components/pages/install/page";
+import { SITE_CONFIG } from "@/site-config";
+import { sitePath } from "@/lib/site-path";
+import type { HowTo, WithContext } from "schema-dts";
+
+export const prerender = true;
+
+const title = "Install OpenLid — Homebrew, signed DMG, or build from source";
+const description =
+  "Install OpenLid on macOS in under a minute: one Homebrew command, a signed and notarized DMG, or a build from source. Plus the one-time Login Items approval and clean update/uninstall steps.";
+
+const canonicalUrl = Astro.site
+  ? new URL(sitePath("/install"), Astro.site).toString()
+  : undefined;
+
+const howToJsonLd: WithContext<HowTo> = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "Install OpenLid on macOS",
+  description,
+  ...(canonicalUrl && { url: canonicalUrl, mainEntityOfPage: canonicalUrl }),
+  about: { "@type": "SoftwareApplication", name: SITE_CONFIG.name },
+  step: [
+    {
+      "@type": "HowToStep",
+      name: "Install with Homebrew",
+      text: "Run `brew install --cask openlid/tap/openlid` to install the signed, notarized app and put the openlid CLI on your PATH. This is the recommended path.",
+      ...(canonicalUrl && { url: `${canonicalUrl}#methods` }),
+    },
+    {
+      "@type": "HowToStep",
+      name: "Or download the signed DMG",
+      text: "Prefer not to use Homebrew? Download the Apple-signed, notarized DMG from GitHub Releases, then drag OpenLid to Applications and open it.",
+      ...(canonicalUrl && { url: `${canonicalUrl}#methods` }),
+    },
+    {
+      "@type": "HowToStep",
+      name: "Approve OpenLid in Login Items",
+      text: "Open System Settings → General → Login Items & Extensions and allow OpenLid in the background. No kernel extension and no admin password are required.",
+      ...(canonicalUrl && { url: `${canonicalUrl}#login-items` }),
+    },
+  ],
+};
+---
+
+<Layout title={title} description={description} jsonLd={howToJsonLd}>
+  <InstallPage client:load />
+</Layout>

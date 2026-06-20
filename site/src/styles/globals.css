@@ -200,11 +200,11 @@
   --radius-input: 0.375rem;
 
   /* Font families */
-  --font-heading: "Manrope", system-ui, sans-serif, -apple-system;
-  --font-body: "Inter", system-ui, sans-serif, -apple-system;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --font-eyebrow: "IBM Plex Mono", ui-monospace, monospace;
-  --font-button: "Inter", system-ui, sans-serif, -apple-system;
+  --font-heading: var(--font-manrope), system-ui, sans-serif;
+  --font-body: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  --font-eyebrow: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  --font-button: var(--font-inter), system-ui, sans-serif;
 
   /* Font sizes (type scale) */
   --font-size-9xl: 8rem;

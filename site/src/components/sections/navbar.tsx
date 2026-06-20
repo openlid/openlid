@@ -24,10 +24,10 @@ export interface NavLink {
 const DEFAULT_LINKS: NavLink[] = [
   { label: "Features", href: sitePath("/#features") },
   { label: "CLI", href: sitePath("/#cli") },
-  { label: "Coding agents", href: sitePath("/coding-agents") },
-  { label: "Story", href: sitePath("/story") },
-  { label: "Privacy", href: sitePath("/#privacy") },
   { label: "Roadmap", href: sitePath("/#roadmap") },
+  { label: "Coding agents", href: sitePath("/coding-agents") },
+  { label: "Install", href: sitePath("/install") },
+  { label: "Story", href: sitePath("/story") },
 ];
 
 export function Navbar({

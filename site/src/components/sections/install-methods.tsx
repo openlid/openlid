@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Apple } from "lucide-react";
+import { AppleMark } from "@/components/ui/apple-mark";
 import { Button } from "@/components/ui/button";
 import { Terminal, type TermLine } from "@/components/ui/terminal";
 
@@ -144,7 +144,7 @@ export function InstallMethods({
                 {m.download && (
                   <Button asChild size="lg" className="mt-7">
                     <a href={m.download.url} target="_blank" rel="noreferrer">
-                      <Apple className="size-[1.15em]" />
+                      <AppleMark className="size-[1.15em]" />
                       {m.download.label}
                     </a>
                   </Button>

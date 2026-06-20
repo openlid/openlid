@@ -18,7 +18,7 @@ import { sitePath } from "@/lib/site-path";
  */
 export function AgentHandoff() {
   return (
-    <section className="border-t border-white/[0.06] bg-ploy-background-primary">
+    <section className="border-t border-white/[0.06] bg-ploy-background-secondary">
       <div className="mx-auto grid max-w-6xl gap-12 px-5 py-24 sm:px-8 lg:grid-cols-[0.95fr_1.05fr]">
         <div>
           <p className="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary">

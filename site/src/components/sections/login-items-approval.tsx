@@ -42,7 +42,7 @@ export function LoginItemsApproval({
   return (
     <section
       id="login-items"
-      className="border-t border-white/[0.06] bg-ploy-background-primary"
+      className="border-t border-white/[0.06] bg-ploy-background-secondary"
     >
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-8">
         <div className="max-w-2xl">
