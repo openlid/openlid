@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Apple } from "lucide-react";
+import { AppleMark } from "@/components/ui/apple-mark";
 import { Button } from "@/components/ui/button";
 import { Terminal } from "@/components/ui/terminal";
 
@@ -66,7 +66,7 @@ export function InstallHero({
         >
           <Button asChild size="lg" className="w-full sm:w-auto">
             <a href={downloadUrl} target="_blank" rel="noreferrer">
-              <Apple className="size-[1.15em]" />
+              <AppleMark className="size-[1.15em]" />
               Download for macOS
             </a>
           </Button>

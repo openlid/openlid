@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Apple } from "lucide-react";
+import { AppleMark } from "@/components/ui/apple-mark";
 import { Button } from "@/components/ui/button";
 import { GitHubMark } from "@/components/ui/github-mark";
 import { MenuBarScene } from "../components/menu-bar-scene";
@@ -95,7 +95,7 @@ export function Hero({
         >
           <Button asChild size="lg" className="w-full sm:w-auto">
             <a href={downloadUrl} target="_blank" rel="noreferrer">
-              <Apple className="size-[1.15em]" />
+              <AppleMark className="size-[1.15em]" />
               Download for macOS
             </a>
           </Button>

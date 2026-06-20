@@ -24,9 +24,9 @@ export interface NavLink {
 const DEFAULT_LINKS: NavLink[] = [
   { label: "Features", href: sitePath("/#features") },
   { label: "CLI", href: sitePath("/#cli") },
+  { label: "Roadmap", href: sitePath("/#roadmap") },
   { label: "Coding agents", href: sitePath("/coding-agents") },
   { label: "Install", href: sitePath("/install") },
-  { label: "Roadmap", href: sitePath("/#roadmap") },
   { label: "Story", href: sitePath("/story") },
 ];
 
