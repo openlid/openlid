@@ -49,7 +49,7 @@ export function Roadmap({
   return (
     <section
       id="roadmap"
-      className="border-t border-white/[0.06] bg-ploy-background-primary"
+      className="border-t border-white/[0.06] bg-ploy-background-secondary"
     >
       <div className="mx-auto max-w-6xl px-5 py-24 sm:px-8">
         <div className="max-w-2xl">
@@ -99,7 +99,7 @@ export function Roadmap({
                   >
                     {m.version}
                   </span>
-                  <span className="font-mono text-[0.68rem] uppercase tracking-wide text-ploy-text-secondary/60">
+                  <span className="font-mono text-[0.68rem] uppercase tracking-wide text-ploy-text-secondary/80">
                     {m.status}
                   </span>
                 </div>

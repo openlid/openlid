@@ -36,44 +36,6 @@ const jsonLd: WithContext<TechArticle> = {
   ],
 };
 
-const remoteOptions = [
-  {
-    title: "Codex remote connections",
-    body: "Set up Codex mobile from the Codex App, then use ChatGPT on iOS or Android to send prompts, approve actions, and inspect output from the connected host.",
-  },
-  {
-    title: "Claude Code Remote Control",
-    body: "Start Remote Control with `claude remote-control`, `claude --remote-control`, or `/remote-control`, then continue the local session from claude.ai/code or the Claude app.",
-  },
-  {
-    title: "SSH, mosh, or Screen Sharing",
-    body: "Keep a universal fallback for terminal panes, visual permission dialogs, private networks, and workflows outside the native mobile surfaces.",
-  },
-  {
-    title: "Harness web, RPC, or bot bridges",
-    body: "Pi, OpenCode, Hermes, and smaller harnesses can still work from a phone when you run the harness on the laptop and expose only a trusted web UI, RPC bridge, SSH session, or messaging bot.",
-  },
-];
-
-const agentFlows = [
-  {
-    title: "Claude Code",
-    body: "Remote Control keeps execution on your machine while the phone or browser becomes a synced control surface. If the local process stops or the laptop sleeps, the session stops.",
-  },
-  {
-    title: "Codex",
-    body: "Codex remote connections use the connected host's files, tools, credentials, plugins, browser setup, and approvals. The phone sends instructions; the host does the work.",
-  },
-  {
-    title: "Build and test loops",
-    body: "The same closed-lid reliability helps long-running tests, local servers, package downloads, and terminal sessions continue while you step away.",
-  },
-  {
-    title: "Other harnesses",
-    body: "Pi, OpenCode, Hermes, OpenHands, aider, Goose, and custom agent loops all share the same dependency: the host process has to keep running on the machine that owns the repo and tools.",
-  },
-];
-
 const nativeControlOptions = [
   {
     eyebrow: "OpenAI Codex",
@@ -501,46 +463,6 @@ const sourceLinks = [
       </section>
 
       <section class="border-t border-white/[0.06]">
-        <div
-          class="mx-auto grid max-w-6xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-[0.9fr_1.1fr]"
-        >
-          <div>
-            <p
-              class="font-eyebrow text-xs uppercase tracking-[0.18em] text-ploy-accent-primary"
-            >
-              Agent workflows
-            </p>
-            <h2
-              class="font-heading typography-heading mt-3 text-balance text-3xl tracking-[-0.02em] text-ploy-text-primary sm:text-4xl"
-            >
-              Built for long-running local work.
-            </h2>
-            <p class="mt-4 text-base leading-relaxed text-ploy-text-secondary">
-              OpenLid does not replace Claude Code, Codex, Pi, OpenCode, Hermes,
-              ChatGPT mobile, Claude mobile, SSH, or your remote terminal. It
-              makes the laptop reliable enough to host them after the lid
-              closes.
-            </p>
-          </div>
-
-          <div class="grid gap-4">
-            {
-              agentFlows.map((flow) => (
-                <div class="rounded-2xl border border-white/[0.07] bg-white/[0.015] p-6">
-                  <h3 class="text-lg font-semibold text-ploy-text-primary">
-                    {flow.title}
-                  </h3>
-                  <p class="mt-2 text-sm leading-relaxed text-ploy-text-secondary">
-                    {flow.body}
-                  </p>
-                </div>
-              ))
-            }
-          </div>
-        </div>
-      </section>
-
-      <section class="border-t border-white/[0.06]">
         <div class="mx-auto max-w-6xl px-5 py-20 sm:px-8">
           <div class="max-w-2xl">
             <p
@@ -561,21 +483,6 @@ const sourceLinks = [
               Sharing, a private web UI, a messaging gateway, or an
               authenticated mobile client.
             </p>
-          </div>
-
-          <div class="mt-12 grid gap-5 md:grid-cols-3">
-            {
-              remoteOptions.map((option) => (
-                <div class="rounded-2xl border border-white/[0.07] bg-white/[0.015] p-6">
-                  <h3 class="text-base font-semibold text-ploy-text-primary">
-                    {option.title}
-                  </h3>
-                  <p class="mt-3 text-sm leading-relaxed text-ploy-text-secondary">
-                    {option.body}
-                  </p>
-                </div>
-              ))
-            }
           </div>
 
           <div

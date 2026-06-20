@@ -3,6 +3,7 @@ import { Apple } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GitHubMark } from "@/components/ui/github-mark";
 import { Terminal } from "../components/terminal";
+import { sitePath } from "@/lib/site-path";
 
 /**
  * @ployComponent
@@ -65,6 +66,16 @@ export function FinalCta({
             ]}
           />
         </div>
+
+        <p className="mt-5 text-sm text-ploy-text-secondary">
+          Prefer the DMG or building from source?{" "}
+          <a
+            href={sitePath("/install")}
+            className="font-medium text-ploy-text-primary underline-offset-4 transition-colors hover:text-ploy-accent-primary hover:underline"
+          >
+            See all install options
+          </a>
+        </p>
       </div>
     </section>
   );

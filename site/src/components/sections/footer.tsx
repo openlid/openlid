@@ -25,6 +25,7 @@ const DEFAULT_COLUMNS: FooterColumn[] = [
       { label: "Features", href: sitePath("/#features") },
       { label: "CLI", href: sitePath("/#cli") },
       { label: "Coding agents", href: sitePath("/coding-agents") },
+      { label: "Install", href: sitePath("/install") },
       { label: "Story", href: sitePath("/story") },
       { label: "Privacy", href: sitePath("/#privacy") },
       { label: "Roadmap", href: sitePath("/#roadmap") },
@@ -82,7 +83,7 @@ export function Footer({
 
           {columns.map((col) => (
             <div key={col.title}>
-              <h3 className="font-eyebrow text-xs uppercase tracking-[0.16em] text-ploy-text-secondary/70">
+              <h3 className="font-eyebrow text-xs uppercase tracking-[0.16em] text-ploy-text-secondary/80">
                 {col.title}
               </h3>
               <ul className="mt-4 space-y-3">
@@ -103,7 +104,7 @@ export function Footer({
           ))}
         </div>
 
-        <div className="mt-12 flex flex-col gap-2 border-t border-white/[0.06] pt-6 text-xs text-ploy-text-secondary/70 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-12 flex flex-col gap-2 border-t border-white/[0.06] pt-6 text-xs text-ploy-text-secondary/80 sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} OpenLid. Apache License 2.0.</p>
           <p className="font-mono">macOS 13+ · Apple Silicon · Linux planned</p>
         </div>

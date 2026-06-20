@@ -9,9 +9,6 @@ import { OriginStory } from "./sections/origin-story";
 import { Cli } from "./sections/cli";
 import { Privacy } from "./sections/privacy";
 import { Roadmap } from "./sections/roadmap";
-import { InstallMethods } from "@/components/sections/install-methods";
-import { LoginItemsApproval } from "@/components/sections/login-items-approval";
-import { UpdateUninstall } from "@/components/sections/update-uninstall";
 import { Faq } from "@/components/sections/faq";
 import { FinalCta } from "./sections/final-cta";
 
@@ -23,11 +20,12 @@ import { FinalCta } from "./sections/final-cta";
  * @ployComponentStatus stable
  * @ployComponentDescription OpenLid launch homepage shell. Composes the shared
  * Navbar + Footer with the home sections in order: Hero, Scenarios, Features,
- * AgentHandoff, OriginStory, Cli, Privacy, Roadmap, InstallMethods,
- * LoginItemsApproval, UpdateUninstall, Faq, FinalCta. Wrapped in MotionConfig
- * (reducedMotion="user")
+ * AgentHandoff, Cli, Privacy, Roadmap, OriginStory, Faq, FinalCta. The
+ * install/setup/upkeep sections live on the dedicated /install page so the home
+ * scroll stays a focused pitch. Wrapped in MotionConfig (reducedMotion="user")
  * so scroll/mount animations respect accessibility. Dark monochrome theme with a
- * single icy-blue accent.
+ * single icy-blue accent; sections alternate between the primary and secondary
+ * surface to give the scroll rhythm.
  */
 export function HomePage() {
   return (
@@ -39,13 +37,10 @@ export function HomePage() {
           <Scenarios />
           <Features />
           <AgentHandoff />
-          <OriginStory />
           <Cli />
           <Privacy />
           <Roadmap />
-          <InstallMethods />
-          <LoginItemsApproval />
-          <UpdateUninstall />
+          <OriginStory />
           <Faq />
           <FinalCta />
         </main>
