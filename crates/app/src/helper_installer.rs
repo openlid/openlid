@@ -121,13 +121,17 @@ fn daemon_service() -> Result<Retained<AnyObject>> {
     let cls = objc2::runtime::AnyClass::get(c"SMAppService")
         .ok_or_else(|| anyhow!("SMAppService class not available (macOS 13+ required)"))?;
     let plist_name = NSString::from_str(HELPER_PLIST_NAME);
-    // SAFETY: +daemonWithPlistName: returns an *autoreleased* SMAppService —
-    // it's not in the alloc/new/copy/mutableCopy/init method family, so we
-    // don't already own +1. We must retain via `Retained::retain` (which
-    // calls `objc_retain`); `Retained::from_raw` would double-release the
+    // SAFETY: +daemonServiceWithPlistName: returns an *autoreleased*
+    // SMAppService — it's not in the alloc/new/copy/mutableCopy/init method
+    // family, so we don't already own +1. We must retain via `Retained::retain`
+    // (which calls `objc_retain`); `Retained::from_raw` would double-release the
     // object when the autorelease pool drains.
+    //
+    // The Obj-C selector is `daemonServiceWithPlistName:` (NS_SWIFT_NAME maps it
+    // to the Swift `SMAppService.daemon(plistName:)`). Sending the Swift-shaped
+    // `daemonWithPlistName:` raises doesNotRecognizeSelector → abort.
     let service: Retained<AnyObject> = unsafe {
-        let raw: *mut AnyObject = msg_send![cls, daemonWithPlistName: &*plist_name];
+        let raw: *mut AnyObject = msg_send![cls, daemonServiceWithPlistName: &*plist_name];
         Retained::retain(raw)
             .ok_or_else(|| anyhow!("SMAppService.daemon(plistName:) returned nil"))?
     };
