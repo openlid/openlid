@@ -7,12 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-06-22
+
 ### Changed
 
 - **Keep display awake now also covers closed-lid remote access.** When
   OpenLid is active and the preference is enabled, the display-idle
   assertion remains held even with no external display attached, preventing
   idle screen lock during VNC/headless use.
+
+### Fixed
+
+- **The privileged helper now registers on macOS 26.** OpenLid resolves
+  `SMAppService` through a runtime class lookup but never linked
+  ServiceManagement.framework; macOS 26 stopped loading it transitively, so
+  the class was unavailable and a fresh install could not register its
+  helper — silently leaving sleep prevention off. The framework is now linked
+  (`crates/app/build.rs`), and the daemon factory uses the correct
+  Objective-C selector (`daemonServiceWithPlistName:`, not the Swift-shaped
+  `daemonWithPlistName:`), which had aborted with an unrecognized-selector
+  exception once the class became reachable.
 
 ### Security
 
