@@ -1,4 +1,5 @@
 import { GitHubMark } from "@/components/ui/github-mark";
+import { LinkedInMark } from "@/components/ui/linkedin-mark";
 import { Wordmark } from "@/components/ui/wordmark";
 import { sitePath } from "@/lib/site-path";
 
@@ -9,7 +10,8 @@ import { sitePath } from "@/lib/site-path";
  * @ployComponentPattern footer
  * @ployComponentStatus stable
  * @ployComponentDescription Hallmark Ft5 statement footer for OpenLid: one
- * closing display sentence, a short product note, minimal inline links, and a
+ * closing display sentence, a short product note, minimal inline links, a
+ * compact creator credit (avatar, one-line bio, GitHub + LinkedIn), and a
  * compact meta row. Dark hairline dividers, no duplicate CTA (the final CTA
  * section owns that).
  */
@@ -71,6 +73,47 @@ export function Footer({
               {l.label}
             </a>
           ))}
+        </div>
+
+        <div className="mt-8 flex items-start gap-4 border-t border-white/[0.06] pt-6">
+          <img
+            src={sitePath("/diyan-bogdanov.jpg")}
+            alt="Diyan Bogdanov"
+            width={44}
+            height={44}
+            loading="lazy"
+            className="size-11 shrink-0 rounded-full"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ploy-text-primary">
+              Built by Diyan Bogdanov
+            </p>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ploy-text-secondary">
+              I built OpenLid so my agent harnesses keep running locally with
+              the lid shut — full speed on the go, nothing ever leaving my
+              laptop.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <a
+                href="https://github.com/diyanbogdanov"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-ploy-text-secondary transition-colors hover:text-ploy-text-primary"
+              >
+                <GitHubMark className="size-4" />
+                GitHub
+              </a>
+              <a
+                href="https://www.linkedin.com/in/diyan-bogdanov/"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 text-sm text-ploy-text-secondary transition-colors hover:text-ploy-text-primary"
+              >
+                <LinkedInMark className="size-4" />
+                LinkedIn
+              </a>
+            </div>
+          </div>
         </div>
 
         <div className="mt-8 flex flex-col gap-2 text-xs text-ploy-text-secondary/80 sm:flex-row sm:items-center sm:justify-between">
