@@ -42,7 +42,7 @@ jobs:
       DST_REPO: openlid/homebrew-tap
       DST_PATH: Casks/openlid.rb
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: validate cask Ruby syntax
         run: ruby -c "$SRC"

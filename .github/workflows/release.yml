@@ -30,7 +30,7 @@ jobs:
     # SHA-256 (Homebrew cask, install scripts, supply-chain refs).
     if: github.event_name == 'workflow_dispatch' || github.event.created
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
