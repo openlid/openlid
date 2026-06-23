@@ -27,10 +27,12 @@ export function Cli() {
             Drive everything from the command line.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-ploy-text-secondary">
-            The Homebrew install puts <code className="font-mono text-ploy-text-primary">openlid</code> on
-            your PATH. Arm it, schedule it, or check status from scripts and
-            CI — with machine-readable <code className="font-mono text-ploy-text-primary">--json</code> output
-            on every command.
+            The Homebrew install puts{" "}
+            <code className="font-mono text-ploy-text-primary">openlid</code> on
+            your PATH. Arm it, schedule it, or check status from scripts and CI
+            — with machine-readable{" "}
+            <code className="font-mono text-ploy-text-primary">--json</code>{" "}
+            output on every command.
           </p>
           <ul className="mt-6 space-y-3 text-sm text-ploy-text-secondary">
             {[
@@ -47,7 +49,7 @@ export function Cli() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={false}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.5 }}

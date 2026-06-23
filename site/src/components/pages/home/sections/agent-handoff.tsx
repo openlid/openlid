@@ -40,8 +40,14 @@ export function AgentHandoff() {
               { icon: Wifi, label: "Official mobile control stays reachable" },
               { icon: Smartphone, label: "Phone becomes the control surface" },
             ].map((item) => (
-              <div key={item.label} className="border-l border-white/[0.08] pl-4">
-                <item.icon className="size-5 text-ploy-accent-primary" strokeWidth={1.6} />
+              <div
+                key={item.label}
+                className="border-l border-white/[0.08] pl-4"
+              >
+                <item.icon
+                  className="size-5 text-ploy-accent-primary"
+                  strokeWidth={1.6}
+                />
                 <p className="mt-3 text-sm leading-relaxed text-ploy-text-secondary">
                   {item.label}
                 </p>
@@ -58,7 +64,7 @@ export function AgentHandoff() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={false}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.5 }}
@@ -72,7 +78,10 @@ export function AgentHandoff() {
               { kind: "comment", text: "" },
               { kind: "prompt", text: "tmux new -s codex" },
               { kind: "prompt", text: "codex" },
-              { kind: "out", text: "Working tree ready · waiting for instructions" },
+              {
+                kind: "out",
+                text: "Working tree ready · waiting for instructions",
+              },
               { kind: "comment", text: "  // lid closed, session still alive" },
             ]}
           />

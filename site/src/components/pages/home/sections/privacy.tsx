@@ -38,9 +38,12 @@ export function Privacy() {
         className="pointer-events-none absolute left-1/2 top-0 h-80 w-[120%] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgba(143,179,217,0.08),transparent_65%)]"
       />
       <div className="relative mx-auto max-w-3xl px-5 py-28 text-center sm:px-8">
-        <ShieldCheck className="mx-auto size-8 text-ploy-accent-primary" strokeWidth={1.5} />
+        <ShieldCheck
+          className="mx-auto size-8 text-ploy-accent-primary"
+          strokeWidth={1.5}
+        />
         <motion.h2
-          initial={{ opacity: 0, y: 16 }}
+          initial={false}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.5 }}

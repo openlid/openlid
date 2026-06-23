@@ -1,5 +1,5 @@
 import { Terminal } from "../components/terminal";
-import { MenuBarCard } from "../components/menu-bar-card";
+import { ProductScreenshot } from "../components/product-screenshot";
 
 /**
  * @ployComponent
@@ -9,8 +9,8 @@ import { MenuBarCard } from "../components/menu-bar-card";
  * @ployComponentStatus stable
  * @ployComponentDescription "Why" section. Left-aligned section heading + two
  * large framed product panels (one terminal showing a running build that
- * survives a closed lid, one menu-bar card showing idle-lock prevention). Each
- * panel pairs a rendered artifact with a concise text block. Dark surface,
+ * survives a closed lid, one real Preferences screenshot showing idle-lock
+ * prevention). Each panel pairs an artifact with a concise text block. Dark surface,
  * hairline borders — mirrors the lookbook overview rhythm. Static (no scroll-
  * gated opacity) so the panels are always visible.
  */
@@ -24,7 +24,8 @@ export function Scenarios() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-ploy-text-secondary">
             Closing the lid sleeps the system. Stepping away locks the screen.
-            OpenLid quietly handles both — without leaving sleep disabled forever.
+            OpenLid quietly handles both — without leaving sleep disabled
+            forever.
           </p>
         </div>
 
@@ -50,7 +51,10 @@ export function Scenarios() {
             body="At your desk, step away for five minutes and come back to a locked screen — for the third time today. Keep the display awake while OpenLid is on, including closed-lid remote sessions."
           >
             <div className="flex justify-center py-2">
-              <MenuBarCard />
+              <ProductScreenshot
+                name="preferencesGeneral"
+                className="max-w-[560px] rounded-lg shadow-black/35"
+              />
             </div>
           </Panel>
         </div>

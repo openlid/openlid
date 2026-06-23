@@ -2,6 +2,7 @@ import { MotionConfig } from "motion/react";
 import { Navbar } from "@/components/sections/navbar";
 import { Footer } from "@/components/sections/footer";
 import { Hero } from "./sections/hero";
+import { ProductScreenshots } from "./sections/product-screenshots";
 import { Scenarios } from "./sections/scenarios";
 import { Features } from "./sections/features";
 import { AgentHandoff } from "./sections/agent-handoff";
@@ -20,12 +21,12 @@ import { FinalCta } from "./sections/final-cta";
  * @ployComponentStatus stable
  * @ployComponentDescription OpenLid launch homepage shell. Composes the shared
  * Navbar + Footer with the home sections in order: Hero, Scenarios, Features,
- * AgentHandoff, Cli, Privacy, Roadmap, OriginStory, Faq, FinalCta. The
- * install/setup/upkeep sections live on the dedicated /install page so the home
- * scroll stays a focused pitch. Wrapped in MotionConfig (reducedMotion="user")
- * so scroll/mount animations respect accessibility. Dark monochrome theme with a
- * single icy-blue accent; sections alternate between the primary and secondary
- * surface to give the scroll rhythm.
+ * ProductScreenshots, Scenarios, Features, AgentHandoff, Cli, Privacy, Roadmap,
+ * OriginStory, Faq, FinalCta. The install/setup/upkeep sections live on the
+ * dedicated /install page so the home scroll stays a focused pitch. Wrapped in
+ * MotionConfig (reducedMotion="user") so scroll/mount animations respect
+ * accessibility. Dark monochrome theme with a single icy-blue accent; sections
+ * alternate between the primary and secondary surface to give the scroll rhythm.
  */
 export function HomePage() {
   return (
@@ -34,6 +35,7 @@ export function HomePage() {
         <Navbar />
         <main>
           <Hero />
+          <ProductScreenshots />
           <Scenarios />
           <Features />
           <AgentHandoff />

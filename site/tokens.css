@@ -1,0 +1,28 @@
+/* Hallmark · tokens: OpenLid home Map / Diagram · theme: Cobalt-adjacent dark */
+:root {
+  --hallmark-color-paper: var(--ploy-background-primary);
+  --hallmark-color-paper-2: var(--ploy-background-secondary);
+  --hallmark-color-ink: var(--ploy-text-primary);
+  --hallmark-color-muted: var(--ploy-text-secondary);
+  --hallmark-color-accent: var(--ploy-accent-primary);
+  --hallmark-color-rule: var(--ploy-border-primary);
+  --hallmark-font-display: var(--font-heading);
+  --hallmark-font-body: var(--font-body);
+  --hallmark-font-mono: var(--font-mono);
+  --hallmark-space-xs: 0.5rem;
+  --hallmark-space-sm: 0.75rem;
+  --hallmark-space-md: 1rem;
+  --hallmark-space-lg: 1.5rem;
+  --hallmark-space-xl: 2.5rem;
+  --hallmark-space-2xl: 4rem;
+  --hallmark-space-3xl: 6rem;
+  --hallmark-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --hallmark-ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --hallmark-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --hallmark-dur-micro: 120ms;
+  --hallmark-dur-short: 220ms;
+  --hallmark-dur-long: 420ms;
+  --hallmark-radius-control: 0.375rem;
+  --hallmark-radius-panel: 1rem;
+  --hallmark-rule-hairline: 1px solid var(--hallmark-color-rule);
+}

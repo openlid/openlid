@@ -31,7 +31,7 @@ export function FinalCta({
       />
       <div className="relative mx-auto max-w-2xl px-5 py-28 text-center sm:px-8">
         <motion.h2
-          initial={{ opacity: 0, y: 16 }}
+          initial={false}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: "-80px" }}
           transition={{ duration: 0.5 }}
@@ -51,7 +51,12 @@ export function FinalCta({
               Download for macOS
             </a>
           </Button>
-          <Button asChild size="lg" variant="secondary" className="w-full sm:w-auto">
+          <Button
+            asChild
+            size="lg"
+            variant="secondary"
+            className="w-full sm:w-auto"
+          >
             <a href={repoUrl} target="_blank" rel="noreferrer">
               <GitHubMark className="size-[1.15em]" />
               Star on GitHub
@@ -62,7 +67,10 @@ export function FinalCta({
         <div className="mx-auto mt-6 max-w-md">
           <Terminal
             lines={[
-              { kind: "prompt", text: "brew install --cask openlid/tap/openlid" },
+              {
+                kind: "prompt",
+                text: "brew install --cask openlid/tap/openlid",
+              },
             ]}
           />
         </div>
@@ -71,9 +79,9 @@ export function FinalCta({
           Prefer the DMG or building from source?{" "}
           <a
             href={sitePath("/install")}
-            className="font-medium text-ploy-text-primary underline-offset-4 transition-colors hover:text-ploy-accent-primary hover:underline"
+            className="whitespace-nowrap font-medium text-ploy-text-primary underline-offset-4 transition-colors hover:text-ploy-accent-primary hover:underline"
           >
-            See all install options
+            Install options
           </a>
         </p>
       </div>
