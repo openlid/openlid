@@ -53,14 +53,29 @@ pub fn run() -> Result<()> {
     // build wasn't signed with a Developer ID), but the menubar should
     // still launch so the user can see the status menu. The XPC client's
     // panic-guard ensures we degrade gracefully if the helper isn't reachable.
-    try_register_helper();
+    // Shared recovery surface: rate-limits helper-recovery banners and
+    // owns the bounded post-approval follow-up. Shared between startup
+    // registration and the runtime controller so a single cooldown
+    // governs all surfacing.
+    let recovery = crate::recovery::HelperRecoverySurface::new();
+
+    // Install the notification delegate BEFORE any banner can be posted.
+    // The center holds it weakly, so we keep it alive for the app's
+    // lifetime by binding it here (dropped only when `run` returns on
+    // quit). Tapping a banner opens Login Items and arms the follow-up.
+    let _notify_delegate = crate::notify::install({
+        let recovery = recovery.clone();
+        Arc::new(move || recovery.on_settings_opened())
+    });
+
+    try_register_helper(&recovery);
 
     // Platform impls.
     let lid = Arc::new(MacLidMonitor::start()?);
     let ps = Arc::new(MacPowerSourceMonitor::start()?);
     let display = Arc::new(MacDisplayController::new());
     let client = Arc::new(HelperClient::new()?);
-    let power = Arc::new(HelperPowerController::new(client.clone()));
+    let power = Arc::new(HelperPowerController::new(client, recovery.clone()));
     // Reachability monitor. Held for app lifetime. Best-effort:
     // failure here just logs and continues with the in-transit
     // detector effectively disabled (the runtime never receives
@@ -78,6 +93,23 @@ pub fn run() -> Result<()> {
     // the v2 path so the user keeps their settings without manual work.
     let config_path = Config::migrate_v1_to_v2()?;
     let runtime = StateRuntime::new(power, lid, ps, display, config_path)?;
+
+    // Wire the activity probe used by the in-transit detector: it defers
+    // auto-disable while a headless agent is actually working instead of
+    // sleeping the Mac out from under it.
+    runtime.set_busy_probe(Arc::new(crate::platform::macos::activity::system_busy));
+
+    // Let the bounded approval follow-up nudge the runtime to re-attempt
+    // the helper after the user approves it in System Settings. Weak ref
+    // so the recovery surface never keeps the runtime alive.
+    {
+        let weak = Arc::downgrade(&runtime);
+        recovery.set_reconcile_callback(Arc::new(move || {
+            if let Some(rt) = weak.upgrade() {
+                rt.request_reconcile();
+            }
+        }));
+    }
 
     // Subscribe the runtime to network reachability changes. The
     // callback fires on the SCNetworkReachability main-runloop
@@ -162,7 +194,7 @@ pub fn run() -> Result<()> {
 /// so the helper is wired into launchd before the first XPC call. Logs
 /// outcomes but never fails the launch — the user-facing path through the
 /// preferences window can re-trigger registration if needed.
-fn try_register_helper() {
+fn try_register_helper(surface: &crate::recovery::HelperRecoverySurface) {
     use crate::helper_installer::{self, HelperServiceStatus};
 
     match helper_installer::status() {
@@ -171,19 +203,18 @@ fn try_register_helper() {
             return;
         }
         Ok(HelperServiceStatus::RequiresApproval) => {
-            tracing::info!(
-                "helper SMAppService: registered but requires approval in System Settings"
-            );
+            tracing::info!("helper SMAppService: registered but requires approval");
+            // Surface it instead of silently logging — this is exactly the
+            // state that used to fail silently for days.
+            surface.notify_approval_needed();
             return;
         }
-        Ok(HelperServiceStatus::NotFound) => {
-            tracing::warn!(
-                "helper SMAppService: plist not found — verify OpenLid.app is in /Applications \
-                 and Contents/Library/LaunchDaemons/io.openlid.helper.plist is present"
-            );
-            return;
-        }
-        Ok(HelperServiceStatus::NotRegistered) => {
+        // NotFound is treated like NotRegistered: an in-place app
+        // replacement (Homebrew upgrade or manual swap) can orphan the
+        // prior registration and report NotFound even when correctly
+        // placed. Fall through and (re-)register; only a register()
+        // failure below means a genuine misinstall.
+        Ok(HelperServiceStatus::NotFound | HelperServiceStatus::NotRegistered) => {
             // Continue to register below.
         }
         Ok(HelperServiceStatus::Unknown(raw)) => {
@@ -195,24 +226,28 @@ fn try_register_helper() {
         }
     }
 
-    match helper_installer::register() {
-        Ok(()) => match helper_installer::status() {
-            Ok(HelperServiceStatus::Enabled) => {
-                tracing::info!("helper SMAppService: registered and enabled");
+    if let Err(e) = helper_installer::register() {
+        tracing::warn!("helper SMAppService register failed: {e:#}");
+    }
+    // Re-check status and route through the same decision the runtime uses.
+    // register() failing with EPERM commonly means the daemon is
+    // registered-but-unapproved (surface the APPROVAL banner), not a
+    // misinstall. The runtime's HelperClient connects on its first
+    // reconcile, so there's nothing to "reconnect" at startup.
+    match helper_installer::status() {
+        Ok(status) => match crate::recovery::post_register_action(status, true) {
+            crate::recovery::RecoveryAction::NotifyApproval => {
+                tracing::info!("helper SMAppService: registered; approval required");
+                surface.notify_approval_needed();
             }
-            Ok(HelperServiceStatus::RequiresApproval) => {
-                tracing::info!(
-                    "helper SMAppService: registered; user approval required in System Settings"
-                );
+            crate::recovery::RecoveryAction::NotifyNotFound => {
+                surface.notify_not_found();
             }
-            Ok(other) => {
-                tracing::warn!("helper SMAppService: registered but unexpected status {other:?}");
-            }
-            Err(e) => {
-                tracing::warn!("helper SMAppService: post-register status check failed: {e:#}")
-            }
+            _ => tracing::info!("helper SMAppService: registered and enabled"),
         },
-        Err(e) => tracing::warn!("helper SMAppService register failed: {e:#}"),
+        Err(e) => {
+            tracing::warn!("helper SMAppService: post-register status check failed: {e:#}");
+        }
     }
 }
 

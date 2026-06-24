@@ -71,41 +71,85 @@ pub fn should_prevent_sleep(state: &AppState, now: DateTime<Local>) -> bool {
     true
 }
 
-/// Should the in-transit auto-disable fire RIGHT NOW?
+/// The outcome of evaluating the in-transit auto-disable rule.
 ///
-/// Returns `true` iff every guard holds:
+/// `Fire` and `Skip` are terminal; `DeferBusy` is the new third state:
+/// every safety guard matched and the timeout elapsed, but the machine
+/// is actively working (a headless agent), so the runtime must NOT
+/// auto-disable yet — it should recheck shortly. This is what keeps an
+/// agent running with the lid closed from being slept out from under it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InTransitAutoDisableDecision {
+    /// Auto-disable now: every guard holds, the timeout elapsed, and the
+    /// machine is idle.
+    Fire,
+    /// Every guard holds and the timeout elapsed, but the machine is
+    /// busy. Don't auto-disable; the runtime reschedules a recheck.
+    DeferBusy,
+    /// A guard failed, or the timeout has not yet elapsed.
+    Skip,
+}
+
+/// Should the in-transit auto-disable fire RIGHT NOW, defer, or skip?
+///
+/// Guards, evaluated in order:
 ///   * `enabled` -- nothing to disable when already off
 ///   * `lid == Closed` -- the laptop isn't visibly in front of the user
 ///   * `power == Battery {..}` -- not plugged in (the strongest "at a
 ///     desk" signal we have)
 ///   * `!has_external_display` -- not in clamshell mode
 ///   * network has been unreachable for at least `timeout`
+///   * `!system_busy` -- an actively-working machine is a running agent,
+///     not a laptop forgotten in a backpack. Checked LAST (after the
+///     timeout) and yields `DeferBusy`, not `Skip`, so the runtime
+///     rechecks rather than cancelling the detector outright.
 ///
-/// The function is pure; the runtime mutates `state.enabled` based on
-/// the return value and persists. Exhaustively unit-tested for each
-/// guard's negative case.
+/// Pure; the runtime maps the decision onto state mutation + reschedule.
+/// Exhaustively unit-tested for each guard's negative case.
+pub fn in_transit_auto_disable_decision(
+    state: &AppState,
+    has_external_display: bool,
+    system_busy: bool,
+    timeout: Duration,
+    now: Instant,
+) -> InTransitAutoDisableDecision {
+    if !state.enabled {
+        return InTransitAutoDisableDecision::Skip;
+    }
+    if state.lid != LidState::Closed {
+        return InTransitAutoDisableDecision::Skip;
+    }
+    if !matches!(state.power, PowerSource::Battery { .. }) {
+        return InTransitAutoDisableDecision::Skip;
+    }
+    if has_external_display {
+        return InTransitAutoDisableDecision::Skip;
+    }
+    let Some(since) = state.network_unreachable_since else {
+        return InTransitAutoDisableDecision::Skip;
+    };
+    if now.duration_since(since) < timeout {
+        return InTransitAutoDisableDecision::Skip;
+    }
+    if system_busy {
+        return InTransitAutoDisableDecision::DeferBusy;
+    }
+    InTransitAutoDisableDecision::Fire
+}
+
+/// Convenience wrapper: `true` iff the decision is `Fire`. Retained for
+/// call sites and tests that only care about the binary outcome.
 pub fn should_auto_disable_in_transit(
     state: &AppState,
     has_external_display: bool,
+    system_busy: bool,
     timeout: Duration,
     now: Instant,
 ) -> bool {
-    if !state.enabled {
-        return false;
-    }
-    if state.lid != LidState::Closed {
-        return false;
-    }
-    if !matches!(state.power, PowerSource::Battery { .. }) {
-        return false;
-    }
-    if has_external_display {
-        return false;
-    }
-    let Some(since) = state.network_unreachable_since else {
-        return false;
-    };
-    now.duration_since(since) >= timeout
+    matches!(
+        in_transit_auto_disable_decision(state, has_external_display, system_busy, timeout, now),
+        InTransitAutoDisableDecision::Fire,
+    )
 }
 
 fn modifiers_allow(m: &Modifiers, now: DateTime<Local>, power: &PowerSource) -> bool {
@@ -298,6 +342,7 @@ mod tests {
         assert!(should_auto_disable_in_transit(
             &s,
             false, // no external display
+            false, // system_busy: idle
             Duration::from_secs(120),
             now,
         ));
@@ -311,6 +356,7 @@ mod tests {
         assert!(!should_auto_disable_in_transit(
             &s,
             false,
+            false, // system_busy: idle
             Duration::from_secs(120),
             Instant::now(),
         ));
@@ -324,6 +370,7 @@ mod tests {
         assert!(!should_auto_disable_in_transit(
             &s,
             false,
+            false, // system_busy: idle
             Duration::from_secs(120),
             Instant::now(),
         ));
@@ -338,6 +385,7 @@ mod tests {
         assert!(!should_auto_disable_in_transit(
             &s,
             false,
+            false, // system_busy: idle
             Duration::from_secs(120),
             Instant::now(),
         ));
@@ -350,7 +398,8 @@ mod tests {
         let s = in_transit_base();
         assert!(!should_auto_disable_in_transit(
             &s,
-            true, // external display attached
+            true,  // external display attached
+            false, // system_busy: idle
             Duration::from_secs(120),
             Instant::now(),
         ));
@@ -367,6 +416,7 @@ mod tests {
         assert!(!should_auto_disable_in_transit(
             &s,
             false,
+            false, // system_busy: idle
             Duration::from_secs(120),
             Instant::now(),
         ));
@@ -384,6 +434,7 @@ mod tests {
         assert!(!should_auto_disable_in_transit(
             &s,
             false,
+            false, // system_busy: idle
             Duration::from_secs(120),
             now,
         ));
@@ -401,8 +452,65 @@ mod tests {
         assert!(should_auto_disable_in_transit(
             &s,
             false,
+            false, // system_busy: idle
             Duration::from_secs(120),
             now,
         ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Activity-aware in-transit: the busy guard distinguishes a headless
+    // agent actively working (DeferBusy → recheck) from an idle laptop
+    // forgotten in a bag (Fire). Busy is consulted ONLY after the duration
+    // guard, so it can never short-circuit the earlier safety guards.
+    // ─────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn in_transit_defers_when_system_busy_at_timeout() {
+        // All safety guards match and the timeout has elapsed, but the
+        // machine is busy. Firing here would sleep the Mac out from under
+        // a running agent; the decision must be DeferBusy so the runtime
+        // rechecks instead of auto-disabling.
+        let now = Instant::now();
+        let s = AppState {
+            network_unreachable_since: Some(now - Duration::from_secs(120)),
+            ..in_transit_base()
+        };
+        assert_eq!(
+            in_transit_auto_disable_decision(&s, false, true, Duration::from_secs(120), now),
+            InTransitAutoDisableDecision::DeferBusy,
+        );
+    }
+
+    #[test]
+    fn in_transit_skips_when_system_busy_before_timeout() {
+        // Busy is only consulted AFTER the duration guard. Before the
+        // configured timeout elapses the decision is Skip regardless of
+        // busy — we have not yet decided the laptop looks abandoned, so
+        // there is nothing to defer.
+        let now = Instant::now();
+        let s = AppState {
+            network_unreachable_since: Some(now - Duration::from_secs(30)),
+            ..in_transit_base()
+        };
+        assert_eq!(
+            in_transit_auto_disable_decision(&s, false, true, Duration::from_secs(120), now),
+            InTransitAutoDisableDecision::Skip,
+        );
+    }
+
+    #[test]
+    fn in_transit_decision_fires_when_idle_and_all_guards_pass() {
+        // The positive case for the decision function: idle (not busy),
+        // all guards satisfied, timeout met → Fire.
+        let now = Instant::now();
+        let s = AppState {
+            network_unreachable_since: Some(now - Duration::from_secs(120)),
+            ..in_transit_base()
+        };
+        assert_eq!(
+            in_transit_auto_disable_decision(&s, false, false, Duration::from_secs(120), now),
+            InTransitAutoDisableDecision::Fire,
+        );
     }
 }

@@ -390,21 +390,98 @@ fn recv_or_timeout<T>(rx: &mpsc::Receiver<Result<T, PlatformError>>) -> Result<T
 // `prevent_sleep` / `allow_sleep` without knowing about XPC at all.
 
 pub struct HelperPowerController {
-    client: Arc<HelperClient>,
+    /// Swappable so recovery can rebuild the connection in place: the
+    /// underlying `HelperClient` latches invalid on first failure and
+    /// never retries, so "user approved while running" requires a fresh
+    /// client, not a relaunch.
+    client: Mutex<Arc<HelperClient>>,
+    recovery: Arc<crate::recovery::HelperRecoverySurface>,
 }
 
 impl HelperPowerController {
-    pub fn new(client: Arc<HelperClient>) -> Self {
-        Self { client }
+    pub fn new(
+        client: Arc<HelperClient>,
+        recovery: Arc<crate::recovery::HelperRecoverySurface>,
+    ) -> Self {
+        Self {
+            client: Mutex::new(client),
+            recovery,
+        }
+    }
+
+    /// One sleep-prevention attempt with self-recovery. On
+    /// `HelperUnavailable`, run a recovery step (register / surface banner
+    /// / reconnect) and retry once on the possibly-rebuilt client.
+    /// `enabled` doubles as the "may we surface UI?" flag — we only
+    /// bother the user on the prevent path, never while turning OFF.
+    fn attempt(&self, enabled: bool) -> Result<(), PlatformError> {
+        let client = self.client.lock().unwrap().clone();
+        match client.set_sleep_prevention(enabled) {
+            Err(PlatformError::HelperUnavailable) => {
+                self.recover(enabled);
+                let client = self.client.lock().unwrap().clone();
+                client.set_sleep_prevention(enabled)
+            }
+            other => other,
+        }
+    }
+
+    /// Decide and apply one recovery step for an unreachable helper, based
+    /// on its live `SMAppService` status. Pure decision in
+    /// `crate::recovery::recovery_action`; this is the effectful half.
+    fn recover(&self, surface: bool) {
+        let status = match crate::helper_installer::status() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("helper status check failed during recovery: {e:#}");
+                return;
+            }
+        };
+        use crate::recovery::RecoveryAction;
+        let action = crate::recovery::recovery_action(status, surface);
+        // If the decision is to register, attempt it, then RE-CHECK status
+        // and re-decide: register() failing with EPERM commonly means the
+        // daemon is registered-but-unapproved, which should surface the
+        // approval banner — not the misinstall one.
+        let action = if matches!(action, RecoveryAction::Register) {
+            if let Err(e) = crate::helper_installer::register() {
+                tracing::warn!("helper register during recovery failed: {e:#}");
+            }
+            let settled = crate::helper_installer::status().unwrap_or(status);
+            crate::recovery::post_register_action(settled, surface)
+        } else {
+            action
+        };
+        match action {
+            RecoveryAction::Reconnect => {
+                self.reconnect();
+                self.recovery.mark_healthy();
+            }
+            RecoveryAction::NotifyApproval => self.recovery.notify_approval_needed(),
+            RecoveryAction::NotifyNotFound => self.recovery.notify_not_found(),
+            // post_register_action never returns Register; Nothing is a no-op.
+            RecoveryAction::Register | RecoveryAction::Nothing => {}
+        }
+    }
+
+    /// Rebuild the XPC connection with a fresh `HelperClient`.
+    fn reconnect(&self) {
+        match HelperClient::new() {
+            Ok(c) => {
+                *self.client.lock().unwrap() = Arc::new(c);
+                tracing::info!("rebuilt helper XPC connection after recovery");
+            }
+            Err(e) => tracing::warn!("helper reconnect failed: {e:#}"),
+        }
     }
 }
 
 impl PowerController for HelperPowerController {
     fn prevent_sleep(&self) -> Result<(), PlatformError> {
-        self.client.set_sleep_prevention(true)
+        self.attempt(true)
     }
 
     fn allow_sleep(&self) -> Result<(), PlatformError> {
-        self.client.set_sleep_prevention(false)
+        self.attempt(false)
     }
 }

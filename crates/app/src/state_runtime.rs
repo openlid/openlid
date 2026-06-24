@@ -8,11 +8,20 @@ use openlid_core::config::Config;
 use openlid_core::ipc::control::Snapshot;
 use openlid_core::mode::{LidState, PowerSource, Schedule};
 use openlid_core::platform::{DisplayController, LidObserver, PowerController, PowerSourceMonitor};
-use openlid_core::state::{should_prevent_sleep, AppState};
+use openlid_core::state::{
+    in_transit_auto_disable_decision, should_prevent_sleep, AppState, InTransitAutoDisableDecision,
+};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
+
+/// How long to wait before re-evaluating an in-transit auto-disable that
+/// was deferred because the machine was busy. Short relative to the
+/// configured network timeout: by the time we defer, the network has
+/// already been unreachable past the threshold, so all we're waiting on
+/// is the machine going idle.
+const IN_TRANSIT_BUSY_RECHECK_INTERVAL: StdDuration = StdDuration::from_secs(60);
 
 /// Patch struct for updating preferences atomically. Each `Some(_)` replaces
 /// the corresponding field; `None` leaves it untouched.
@@ -75,6 +84,14 @@ where
     /// no-op. Same pattern as `timer_generation` but for a separate
     /// timer that the user-driven enable/disable path doesn't touch.
     in_transit_generation: AtomicU64,
+    /// System-activity probe for the in-transit detector. Returns `true`
+    /// when the machine is doing real work (a headless agent), in which
+    /// case the auto-disable defers instead of sleeping the Mac. Defaults
+    /// to "never busy" so tests and headless contexts behave
+    /// deterministically; `menubar::run` swaps in the real load-average
+    /// reader via `set_busy_probe`. Mirrors how the network monitor is
+    /// wired externally rather than threaded through a generic.
+    busy_probe: Mutex<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 impl<P, L, S, D> StateRuntime<P, L, S, D>
@@ -124,6 +141,7 @@ where
             listeners: Mutex::new(Vec::new()),
             timer_generation: AtomicU64::new(0),
             in_transit_generation: AtomicU64::new(0),
+            busy_probe: Mutex::new(Arc::new(|| false)),
         });
 
         let rt_for_lid = Arc::clone(&rt);
@@ -143,6 +161,31 @@ where
     /// main thread before touching AppKit — see `crate::main_thread::run_on_main`.
     pub fn add_listener(&self, listener: StateListener) {
         self.listeners.lock().unwrap().push(listener);
+    }
+
+    /// Replace the system-activity probe read by the in-transit detector.
+    /// `menubar::run` wires this to the real load-average reader; the
+    /// default (`|| false`) makes the detector behave exactly as it did
+    /// before activity-awareness in any context that doesn't set it.
+    pub fn set_busy_probe(&self, probe: Arc<dyn Fn() -> bool + Send + Sync>) {
+        *self.busy_probe.lock().unwrap() = probe;
+    }
+
+    /// Read the activity probe without holding the probe lock across the
+    /// call (the probe may do FFI / blocking work).
+    fn system_busy(&self) -> bool {
+        let probe = self.busy_probe.lock().unwrap().clone();
+        probe()
+    }
+
+    /// Force a reconcile from outside the normal lid/power/network event
+    /// path. Used by the helper-recovery approval follow-up: after the
+    /// user is sent to System Settings, a bounded series of these nudges
+    /// the runtime to re-attempt the helper connection without waiting
+    /// for an incidental hardware event.
+    pub fn request_reconcile(&self) {
+        self.reconcile();
+        self.notify_listeners();
     }
 
     fn notify_listeners(&self) {
@@ -256,35 +299,70 @@ where
         });
     }
 
-    /// Read live state + the configured timeout and decide whether to
-    /// fire the in-transit auto-disable. Pure-decision-function call
-    /// happens here; on a `true` return we persist and reconcile.
+    /// Read live state + the configured timeout and map the in-transit
+    /// decision onto an action: `Fire` auto-disables and persists;
+    /// `DeferBusy` leaves state untouched and reschedules a short recheck
+    /// (the machine is working — likely a headless agent — so we must not
+    /// sleep it); `Skip` does nothing.
     fn maybe_fire_in_transit_auto_disable(self: &Arc<Self>, timeout: StdDuration) {
-        let should_fire = {
+        // Read the display + activity probes BEFORE taking the state lock,
+        // so we never hold it across FFI / a blocking probe call.
+        let has_external = self.display.has_external_display();
+        let system_busy = self.system_busy();
+        let decision = {
             let s = self.state.lock().unwrap();
-            openlid_core::state::should_auto_disable_in_transit(
+            in_transit_auto_disable_decision(
                 &s,
-                self.display.has_external_display(),
+                has_external,
+                system_busy,
                 timeout,
                 std::time::Instant::now(),
             )
         };
-        if !should_fire {
-            return;
+        match decision {
+            InTransitAutoDisableDecision::Skip => {}
+            InTransitAutoDisableDecision::DeferBusy => {
+                tracing::info!(
+                    "in-transit auto-disable deferred: guards match but the machine is \
+                     busy; rechecking in {}s",
+                    IN_TRANSIT_BUSY_RECHECK_INTERVAL.as_secs(),
+                );
+                self.arm_in_transit_busy_recheck(timeout);
+            }
+            InTransitAutoDisableDecision::Fire => {
+                tracing::info!(
+                    "in-transit auto-disable: lid closed, on battery, no external display, \
+                     idle, no network for {}s; turning off",
+                    timeout.as_secs(),
+                );
+                {
+                    let mut s = self.state.lock().unwrap();
+                    s.enabled = false;
+                    s.until = None;
+                }
+                // Best-effort persist; ignore errors so a transient disk
+                // issue doesn't prevent the safety deactivation.
+                let _ = self.persist_and_reconcile_inner();
+            }
         }
-        tracing::info!(
-            "in-transit auto-disable: lid closed, on battery, no external display, \
-             no network for {}s; turning off",
-            timeout.as_secs(),
-        );
-        {
-            let mut s = self.state.lock().unwrap();
-            s.enabled = false;
-            s.until = None;
-        }
-        // Best-effort persist; ignore errors so a transient disk issue
-        // doesn't prevent the safety deactivation from happening.
-        let _ = self.persist_and_reconcile_inner();
+    }
+
+    /// Arm a generation-checked recheck after a `DeferBusy` outcome. Waits
+    /// a fixed short interval, then re-evaluates with the SAME duration
+    /// threshold — the network has already been unreachable past the
+    /// timeout, so the recheck is really just polling for the machine to
+    /// go idle. A reachability flip back to `true` bumps the generation
+    /// and cancels the in-flight recheck, same as `arm_in_transit_timer`.
+    fn arm_in_transit_busy_recheck(self: &Arc<Self>, timeout: StdDuration) {
+        let gen = self.in_transit_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let rt = Arc::clone(self);
+        std::thread::spawn(move || {
+            std::thread::sleep(IN_TRANSIT_BUSY_RECHECK_INTERVAL);
+            if rt.in_transit_generation.load(Ordering::SeqCst) != gen {
+                return;
+            }
+            rt.maybe_fire_in_transit_auto_disable(timeout);
+        });
     }
 
     /// Apply a preferences patch — atomic per-field update.
@@ -1350,6 +1428,39 @@ mod tests {
         assert!(
             rt.state.lock().unwrap().enabled,
             "must not fire under threshold"
+        );
+    }
+
+    #[test]
+    fn maybe_fire_in_transit_defers_and_rechecks_when_busy() {
+        // Agent-protection case: every in-transit guard matches and the
+        // timeout has elapsed, but the machine is busy (a headless agent
+        // is working). The detector must NOT auto-disable; instead it
+        // defers and arms a recheck (generation advances) so it can fire
+        // later if the machine goes idle while still in transit.
+        let (rt, _power, _ps, disp, _dir) = fresh_runtime();
+        rt.set_enabled(true, None).unwrap();
+        rt.set_busy_probe(Arc::new(|| true));
+        {
+            let mut s = rt.state.lock().unwrap();
+            s.lid = LidState::Closed;
+            s.power = PowerSource::Battery { percent: 50 };
+            s.network_reachable = false;
+            s.network_unreachable_since =
+                Some(std::time::Instant::now() - StdDuration::from_secs(300));
+        }
+        disp.external.store(false, Ordering::SeqCst);
+        let gen_before = rt.in_transit_generation.load(Ordering::SeqCst);
+
+        rt.maybe_fire_in_transit_auto_disable(StdDuration::from_secs(120));
+
+        assert!(
+            rt.state.lock().unwrap().enabled,
+            "busy machine must not auto-disable — the agent is working"
+        );
+        assert!(
+            rt.in_transit_generation.load(Ordering::SeqCst) > gen_before,
+            "DeferBusy must arm a recheck (generation advances)"
         );
     }
 }

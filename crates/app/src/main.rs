@@ -5,7 +5,9 @@ mod helper_installer;
 mod launch_at_login;
 mod main_thread;
 mod menubar;
+mod notify;
 mod platform;
+mod recovery;
 mod state_runtime;
 mod updater;
 
