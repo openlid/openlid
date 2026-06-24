@@ -15,6 +15,7 @@ openlid-helper-protocol = { path = "../helper-protocol" }
 objc2 = { workspace = true }
 objc2-foundation = { workspace = true }
 objc2-app-kit = { workspace = true }
+objc2-user-notifications = { workspace = true }
 block2 = { workspace = true }
 core-foundation = { workspace = true }
 core-foundation-sys = "0.8"
