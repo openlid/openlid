@@ -45,7 +45,7 @@ interprocess = { version = "2", features = ["tokio"] }
 # of the GitHub release response.
 ureq = { version = "3", features = ["json"] }
 semver = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 
 [profile.release]
 lto = "thin"
