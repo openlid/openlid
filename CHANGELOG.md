@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-24
+
+### Fixed
+
+- **OpenLid could silently stop preventing sleep.** If the privileged
+  helper was unreachable — registered but not yet approved, or its
+  registration orphaned by an in-place upgrade — OpenLid kept reporting
+  "preventing sleep" while actually doing nothing, so closing the lid on
+  battery let the Mac sleep and drop the network. OpenLid now recovers the
+  helper on its own: it re-registers when needed and rebuilds its
+  connection the moment you approve it in System Settings — no relaunch
+  required.
+
+### Added
+
+- **A prompt when the helper needs your approval.** When macOS requires
+  you to allow the helper in System Settings → Login Items, OpenLid now
+  posts a notification that links straight to the toggle (with a fallback
+  that opens System Settings if notifications are off), instead of failing
+  quietly.
+- **Activity-aware in-transit auto-disable.** The in-transit safeguard now
+  defers and rechecks instead of disabling while your Mac is actively
+  working, so a task running with the lid closed isn't put to sleep by a
+  brief network drop.
+
 ## [2.3.3] - 2026-06-22
 
 ### Changed

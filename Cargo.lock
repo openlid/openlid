@@ -1015,7 +1015,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openlid"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -1046,7 +1046,7 @@ dependencies = [
 
 [[package]]
 name = "openlid-core"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "bitflags",
  "chrono",
@@ -1061,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "openlid-helper"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "anyhow",
  "block2",
@@ -1082,7 +1082,7 @@ dependencies = [
 
 [[package]]
 name = "openlid-helper-protocol"
-version = "2.3.3"
+version = "2.4.0"
 dependencies = [
  "cc",
  "objc2",
@@ -2126,7 +2126,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "xtask"
-version = "2.3.3"
+version = "2.4.0"
 
 [[package]]
 name = "yoke"
