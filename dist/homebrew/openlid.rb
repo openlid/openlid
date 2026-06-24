@@ -1,6 +1,6 @@
 cask "openlid" do
-  version "2.3.3"
-  sha256 "c7c60636fb2679c841c6adb5e8421d0d5e25aa425e91c5279391f826c90e7e1d"
+  version "2.4.0"
+  sha256 "146e12660eb9e6626418bf8632a03ad2225ce2ccaebf601433f74da2b240168b"
 
   url "https://github.com/openlid/openlid/releases/download/v#{version}/OpenLid-v#{version}.dmg",
       verified: "github.com/openlid/openlid/"
